@@ -10,6 +10,7 @@ import Team from './components/Team';
 import Testimonials from './components/Testimonials';
 import Footer from './components/Footer';
 import BookingModal from './components/BookingModal';
+import WhatsAppButton from './components/WhatsAppButton';
 
 export default function App() {
   const [isBookingOpen, setIsBookingOpen] = useState(false);
@@ -127,6 +128,9 @@ export default function App() {
           onClose={handleCloseVisitingCardModal}
         />
       )}
+
+      {/* Floating WhatsApp Contact Button */}
+      <WhatsAppButton />
 
     </div>
   );

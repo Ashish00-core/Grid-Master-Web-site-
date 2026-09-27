@@ -19,7 +19,11 @@ export default function EquipmentCatalog({ onAddToQuote, onUpdateQuantity, selec
     return matchesCategory && (nameMatch || typeMatch || catMatch);
   });
 
-  const totalQuoteAmount = selectedEquipment.reduce(
+  const totalQuoteINR = selectedEquipment.reduce(
+    (sum, item) => sum + (item.priceINR || 0) * (item.quantity || 1),
+    0
+  );
+  const totalQuoteUSD = selectedEquipment.reduce(
     (sum, item) => sum + (item.pricePerUnit || item.price || 0) * (item.quantity || 1),
     0
   );
@@ -113,10 +117,10 @@ export default function EquipmentCatalog({ onAddToQuote, onUpdateQuantity, selec
                     <div className="absolute bottom-3 left-4 right-4 flex items-end justify-between">
                       <div>
                         <span className="text-2xl sm:text-3xl font-black text-white font-mono">
-                          {CURRENCY.format(price)}
+                          {CURRENCY.formatINR(item.priceINR)}
                         </span>
                         <span className="text-xs text-slate-400 block -mt-1 font-mono">
-                          {item.unit || 'per unit'}
+                          ≈ {CURRENCY.formatUSD(price)} • {item.unit || 'per unit'}
                         </span>
                       </div>
 
@@ -194,7 +198,7 @@ export default function EquipmentCatalog({ onAddToQuote, onUpdateQuantity, selec
 
         {/* Selected Equipment Quote Panel */}
         {selectedEquipment.length > 0 && (
-          <div className="sticky bottom-6 mt-12 z-40 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border-2 border-amber-500/50 p-4 sm:p-6 rounded-3xl shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-bottom duration-300">
+          <div className="sticky bottom-24 sm:bottom-20 mt-12 z-40 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border-2 border-amber-500/50 p-4 sm:p-6 rounded-3xl shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-bottom duration-300">
             <div className="flex flex-col lg:flex-row gap-5">
 
               {/* Itemized list with quantity controls */}
@@ -232,7 +236,7 @@ export default function EquipmentCatalog({ onAddToQuote, onUpdateQuantity, selec
                       <div className="flex-1 min-w-[140px]">
                         <p className="text-xs font-semibold text-white truncate">{item.name}</p>
                         <p className="text-[10px] text-slate-400 font-mono">
-                          {CURRENCY.format(item.pricePerUnit)} {item.unit}
+                          {CURRENCY.formatINR(item.priceINR)} (≈ {CURRENCY.formatUSD(item.pricePerUnit)}) {item.unit}
                         </p>
                       </div>
 
@@ -257,8 +261,8 @@ export default function EquipmentCatalog({ onAddToQuote, onUpdateQuantity, selec
                         </button>
                       </div>
 
-                      <span className="w-20 sm:w-24 text-right text-xs font-bold font-mono text-amber-300">
-                        {CURRENCY.format(item.pricePerUnit * item.quantity)}
+                      <span className="w-20 sm:w-28 text-right text-xs font-bold font-mono text-amber-300">
+                        {CURRENCY.formatINR(item.priceINR * item.quantity)}
                       </span>
 
                       <button
@@ -281,7 +285,10 @@ export default function EquipmentCatalog({ onAddToQuote, onUpdateQuantity, selec
                     Estimated Component Total
                   </p>
                   <p className="text-2xl font-black font-mono text-amber-400">
-                    {CURRENCY.format(totalQuoteAmount)}
+                    {CURRENCY.formatINR(totalQuoteINR)}
+                    <span className="block text-xs font-bold text-slate-400">
+                      ≈ {CURRENCY.formatUSD(totalQuoteUSD)}
+                    </span>
                   </p>
                   <p className="text-[10px] text-slate-500 mt-1">
                     Excludes installation &amp; design fees — final quote after site audit
@@ -291,7 +298,7 @@ export default function EquipmentCatalog({ onAddToQuote, onUpdateQuantity, selec
                 <button
                   onClick={() =>
                     onOpenBooking(
-                      `Custom Equipment Package (${totalQuoteUnits} units — ${CURRENCY.format(totalQuoteAmount)})`
+                      `Custom Equipment Package (${totalQuoteUnits} units — ${CURRENCY.formatINR(totalQuoteINR)})`
                     )
                   }
                   className="w-full px-6 py-3.5 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 font-black text-xs shadow-lg shadow-amber-500/20 hover:scale-[1.02] transition-all flex items-center justify-center gap-2"

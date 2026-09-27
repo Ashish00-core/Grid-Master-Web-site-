@@ -129,7 +129,7 @@ export default function Team({ onOpenVisitingCard, onOpenBooking }) {
         </div>
 
         {/* OTHER TEAM MEMBERS GRID (INITIAL BADGES ONLY) */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           
           {/* Ashish Kumar (Solar Designer Engineer) */}
           <div className="rounded-3xl bg-slate-950 border-2 border-amber-500/30 p-6 flex flex-col justify-between hover:border-amber-400 transition-all group">
@@ -201,13 +201,65 @@ export default function Team({ onOpenVisitingCard, onOpenBooking }) {
                 </p>
               </div>
 
-              <div className="mt-6 pt-4 border-t border-slate-900 text-xs font-mono">
-                <a href={`mailto:${engineer.email}`} className="text-slate-400 hover:text-amber-300 truncate block">
-                  {engineer.email}
-                </a>
-              </div>
+            <div className="mt-6 pt-4 border-t border-slate-900 text-xs font-mono">
+              <a href={`mailto:${engineer.email}`} className="text-slate-400 hover:text-amber-300 truncate block">
+                {engineer.email}
+              </a>
             </div>
+          </div>
           ))}
+
+          {/* Guarantees card (balances the 2-column grid) */}
+          <div className="rounded-3xl bg-gradient-to-br from-slate-950 to-amber-950/30 border border-amber-500/30 p-6 flex flex-col justify-between hover:border-amber-400/60 transition-all group">
+            <div>
+              <div className="relative mb-4 flex items-center gap-3">
+                <div className="w-16 h-16 rounded-2xl bg-amber-500/15 border border-amber-500/40 flex items-center justify-center text-amber-400 shadow-md flex-shrink-0">
+                  <Award className="w-8 h-8" />
+                </div>
+                <div>
+                  <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 font-bold text-[9px] uppercase rounded">
+                    GRID MASTER STANDARD
+                  </span>
+                </div>
+              </div>
+
+              <h3 className="text-lg font-bold text-white">
+                Every Project, Engineered to Standard
+              </h3>
+              <ul className="mt-4 space-y-2.5 text-xs text-slate-300">
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                  <span>All designs signed off by Head Engineer GANDHAMANENI GOUTHAM</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                  <span>25–30 year panel performance warranty</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                  <span>10-year inverter &amp; battery warranties</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                  <span>10-year workmanship &amp; roof waterproofing guarantee</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                  <span>Code-compliant earthing, surge protection &amp; rapid shutdown</span>
+                </li>
+              </ul>
+            </div>
+
+            <div className="mt-6 pt-4 border-t border-slate-900/80">
+              <button
+                onClick={() => onOpenBooking("Engineering Audit & Warranty Review")}
+                className="w-full py-3 rounded-xl bg-slate-900 hover:bg-amber-500 hover:text-slate-950 text-amber-400 border border-amber-500/30 text-xs font-bold transition-all flex items-center justify-center gap-2"
+              >
+                <span>Get a Certified Quote</span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
 
         </div>
 

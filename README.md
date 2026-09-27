@@ -39,7 +39,10 @@ The full web application lives in [`updated mail testing site/`](./updated%20mai
 - **Save vCard (.vcf)** button, copy contact details, credential badges.
 
 ### 7. 👨‍🔬 Engineering Roster, Testimonials & FAQ
-- Certified team roster with the Head Engineer featured, plus reviews and an FAQ accordion.
+- Team roster featuring **GANDHAMANENI GOUTHAM** (Head Engineer) and **Ashish Kumar** (Solar Designer Engineer), plus a "Grid Master Standard" guarantees card, client reviews and an FAQ accordion.
+
+### 8. 💬 Floating WhatsApp Button
+- Always-visible WhatsApp contact button (bottom-right) that opens a chat with the Head Engineer's number (+91 7200745180) with a pre-filled message. Also used as a fallback when email delivery can't be confirmed.
 
 ---
 
@@ -78,17 +81,26 @@ After activation, every booking submission is emailed as a clean table. Until ac
 
 ---
 
-## 💰 Pricing / Currency
+## 💰 Pricing / Currency (Dual: ₹ primary, $ secondary)
 
-All prices (catalog + calculator) are driven by one config in
+Prices show **₹ (primary) with an ≈ $ equivalent** across the catalog, quote builder,
+calculator and booking receipts — all driven by one config in
 [`src/data/solarData.js`](./updated%20mail%20testing%20site/src/data/solarData.js):
 
 ```js
-export const CURRENCY = { code: "USD", symbol: "$", locale: "en-US", ... };
-export const SOLAR_ASSUMPTIONS = { tariffPerKwh: 0.22, ... };
+export const CURRENCY = {
+  rate: 85, // ₹ per 1 USD (reference conversion)
+  formatINR / formatUSD / inrFromUSD / usdFromINR
+};
+export const SOLAR_ASSUMPTIONS = { tariffPerKwhInr: 8, ... }; // calculator (INR-based)
 ```
 
-To switch the whole site to Indian Rupees, change `CURRENCY` (e.g. `code: "INR"`, `symbol: "₹"`, `locale: "en-IN"`) and the tariff/price values in `SOLAR_ASSUMPTIONS` and `EQUIPMENT_CATALOG`.
+- **Change the reference rate**: edit `CURRENCY.rate`.
+- **Change an equipment price**: edit `priceINR` on the item in `EQUIPMENT_CATALOG` (`pricePerUnit` is the USD reference used for the ≈ $ display).
+- **Change calculator assumptions** (tariff, cost per kW, battery cost): edit `SOLAR_ASSUMPTIONS`.
+
+> The ≈ $ values are conversions at the reference rate — if you want exact fixed USD prices
+> next to the ₹ prices, set them manually per item.
 
 ---
 

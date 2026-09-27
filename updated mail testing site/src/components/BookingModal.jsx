@@ -16,7 +16,6 @@ const STANDARD_SERVICES = [
 const ENGINEER_OPTIONS = [
   { value: "g-gowtham", label: "GANDHAMANENI GOUTHAM (Head Engineer - Solar & Electrical)" },
   { value: "ashish", label: "Ashish Kumar (Solar Designer Engineer)" },
-  { value: "priya-sharma", label: "Priya Sharma (Integration Specialist)" },
 ];
 
 const TIME_SLOTS = [
@@ -116,11 +115,18 @@ export default function BookingModal({ isOpen, onClose, initialService = "", quo
 
   const buildQuoteSummary = () =>
     quoteItems
-      .map((item) => `  - ${item.name} x${item.quantity} (${item.pricePerUnit} per ${item.unit || "unit"})`)
+      .map(
+        (item) =>
+          `  - ${item.name} x${item.quantity} (${CURRENCY.formatINR(item.priceINR)} / ${item.unit || "unit"})`
+      )
       .join("\n");
 
-  const quoteTotal = quoteItems.reduce(
-    (sum, item) => sum + item.pricePerUnit * item.quantity,
+  const quoteTotalINR = quoteItems.reduce(
+    (sum, item) => sum + (item.priceINR || 0) * item.quantity,
+    0
+  );
+  const quoteTotalUSD = quoteItems.reduce(
+    (sum, item) => sum + (item.pricePerUnit || 0) * item.quantity,
     0
   );
 
@@ -153,7 +159,7 @@ export default function BookingModal({ isOpen, onClose, initialService = "", quo
 
     if (quoteItems.length > 0) {
       bookingPayload.selected_equipment = buildQuoteSummary();
-      bookingPayload.equipment_package_total = quoteTotal;
+      bookingPayload.equipment_package_total = `${CURRENCY.formatINR(quoteTotalINR)} (≈ ${CURRENCY.formatUSD(quoteTotalUSD)})`;
     }
 
     let status = "sent";
@@ -187,7 +193,7 @@ export default function BookingModal({ isOpen, onClose, initialService = "", quo
   const handleCopyReceipt = () => {
     const quoteLines =
       quoteItems.length > 0
-        ? `\nSELECTED EQUIPMENT:\n${buildQuoteSummary()}\nEquipment package total: ${quoteTotal}`
+        ? `\nSELECTED EQUIPMENT:\n${buildQuoteSummary()}\nEquipment package total: ${CURRENCY.formatINR(quoteTotalINR)} (≈ ${CURRENCY.formatUSD(quoteTotalUSD)})`
         : "";
     const statusLine =
       dispatchStatus === "sent"
@@ -217,8 +223,8 @@ For assistance, contact Head Engineer G. Goutham at ${COMPANY_INFO.directPhone}.
     const quoteLines =
       quoteItems.length > 0
         ? `\nSELECTED EQUIPMENT PACKAGE:\n${quoteItems
-            .map((item) => `${item.name} x${item.quantity} = ${item.pricePerUnit * item.quantity}`)
-            .join("\n")}\nPackage Subtotal    : ${quoteTotal}`
+            .map((item) => `${item.name} x${item.quantity} = ${CURRENCY.formatINR(item.priceINR * item.quantity)}`)
+            .join("\n")}\nPackage Subtotal    : ${CURRENCY.formatINR(quoteTotalINR)} (≈ ${CURRENCY.formatUSD(quoteTotalUSD)})`
         : "";
     const receiptText = `=====================================================
             GRID MASTER SOLAR SYSTEMS
@@ -328,13 +334,16 @@ Status: ${
                     <li key={item.id} className="flex justify-between gap-3">
                       <span className="truncate">{item.name} ×{item.quantity}</span>
                       <span className="text-white flex-shrink-0">
-                        {CURRENCY.format(item.pricePerUnit * item.quantity)}
+                        {CURRENCY.formatINR(item.priceINR * item.quantity)}
                       </span>
                     </li>
                   ))}
                 </ul>
                 <p className="mt-1.5 pt-1.5 border-t border-amber-500/20 font-bold text-white font-mono">
-                  Package total: {CURRENCY.format(quoteTotal)}
+                  Package total: {CURRENCY.formatINR(quoteTotalINR)}{" "}
+                  <span className="text-[10px] font-medium text-slate-400">
+                    (≈ {CURRENCY.formatUSD(quoteTotalUSD)})
+                  </span>
                 </p>
               </div>
             )}
@@ -619,7 +628,7 @@ Status: ${
               {quoteItems.length > 0 && (
                 <div className="flex justify-between border-b border-slate-800 pb-2">
                   <span className="text-slate-400">Equipment Package:</span>
-                  <span className="text-amber-300 font-bold">{quoteItems.length} items — total {CURRENCY.format(quoteTotal)}</span>
+                  <span className="text-amber-300 font-bold">{quoteItems.length} items — total {CURRENCY.formatINR(quoteTotalINR)}</span>
                 </div>
               )}
               <div className="flex justify-between">
