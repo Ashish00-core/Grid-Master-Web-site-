@@ -1,13 +1,29 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   FileSpreadsheet, Sparkles, CheckCircle2, Eye, ShieldCheck, 
-  Home, Building2, Sun, Zap, Cpu, Award, Download, ArrowRight, X
+  Home, Building2, Sun, Zap, Cpu, Award, Download, ArrowRight, X, Copy
 } from 'lucide-react';
 import { CAD_DESIGN_SAMPLES } from '../data/solarData';
 
 export default function DesignSamples({ onOpenBooking }) {
   const [filter, setFilter] = useState('all'); // 'all', 'Residential', 'Commercial'
   const [selectedSample, setSelectedSample] = useState(null);
+  const [copiedSpecs, setCopiedSpecs] = useState(false);
+
+  // Close on Escape + lock background scroll while the CAD modal is open
+  useEffect(() => {
+    if (!selectedSample) return undefined;
+    const onKey = (e) => {
+      if (e.key === "Escape") setSelectedSample(null);
+    };
+    document.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [selectedSample]);
 
   const filteredSamples = CAD_DESIGN_SAMPLES.filter(s => {
     if (filter === 'Residential') return s.type.includes('Residential');
@@ -82,6 +98,7 @@ export default function DesignSamples({ onOpenBooking }) {
                   <img
                     src={sample.image}
                     alt={sample.title}
+                    loading="lazy"
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/40 to-transparent"></div>
@@ -244,18 +261,20 @@ export default function DesignSamples({ onOpenBooking }) {
                     <span className="text-slate-400">Energy Storage Bank:</span>
                     <span className="text-amber-300">{selectedSample.storage}</span>
                   </div>
-                  <div className="flex justify-between border-b border-slate-800 pb-1.5">
-                    <span className="text-slate-400">Roof Pitch & Azimuth:</span>
-                    <span className="text-slate-200">{selectedSample.technicalDetails.roofPitch}</span>
-                  </div>
-                  <div className="flex justify-between border-b border-slate-800 pb-1.5">
-                    <span className="text-slate-400">String Inverter Configuration:</span>
-                    <span className="text-slate-200">{selectedSample.technicalDetails.stringConfiguration}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">MPPT Peak Efficiency:</span>
-                    <span className="text-emerald-400 font-bold">{selectedSample.technicalDetails.mpptEfficiency}</span>
-                  </div>
+                  {Object.entries(selectedSample.technicalDetails).map(([key, value]) => (
+                    <div
+                      key={key}
+                      className="flex justify-between gap-3 border-b border-slate-800 pb-1.5 last:border-b-0"
+                    >
+                      <span className="text-slate-400">
+                        {key
+                          .replace(/([A-Z])/g, " $1")
+                          .replace(/^./, (c) => c.toUpperCase())}
+                        :
+                      </span>
+                      <span className="text-slate-200 text-right">{value}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
 
@@ -289,12 +308,24 @@ export default function DesignSamples({ onOpenBooking }) {
                 <button
                   onClick={() => {
                     const blueprintText = `GRID MASTER CAD SAMPLE:\n${selectedSample.title}\nCapacity: ${selectedSample.capacity}\nLead Engineer: GANDHAMANENI GOUTHAM\nSolar Designer: Ashish Kumar`;
-                    navigator.clipboard.writeText(blueprintText);
-                    alert("Blueprint specs copied to clipboard!");
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                      navigator.clipboard.writeText(blueprintText).catch(() => {});
+                    }
+                    setCopiedSpecs(true);
+                    setTimeout(() => setCopiedSpecs(false), 2500);
                   }}
-                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold"
+                  className={`px-4 py-2.5 rounded-xl text-xs font-semibold transition-colors flex items-center gap-1.5 ${
+                    copiedSpecs
+                      ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-300'
+                      : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
+                  }`}
                 >
-                  Copy Specs
+                  {copiedSpecs ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  ) : (
+                    <Copy className="w-4 h-4 text-amber-400" />
+                  )}
+                  <span>{copiedSpecs ? 'Copied!' : 'Copy Specs'}</span>
                 </button>
 
                 <button

@@ -10,6 +10,7 @@ import Team from './components/Team';
 import Testimonials from './components/Testimonials';
 import Footer from './components/Footer';
 import BookingModal from './components/BookingModal';
+import WhatsAppButton from './components/WhatsAppButton';
 
 export default function App() {
   const [isBookingOpen, setIsBookingOpen] = useState(false);
@@ -43,6 +44,20 @@ export default function App() {
     }
   };
 
+  const handleUpdateQuantity = (id, delta) => {
+    setSelectedEquipment(prev =>
+      prev
+        .map(e =>
+          e.id === id ? { ...e, quantity: Math.min(99, e.quantity + delta) } : e
+        )
+        .filter(e => e.quantity > 0)
+    );
+  };
+
+  const handleClearQuote = () => {
+    setSelectedEquipment([]);
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-amber-500 selection:text-slate-950">
       
@@ -73,6 +88,8 @@ export default function App() {
         {/* Equipment Catalog & Transparent Prices */}
         <EquipmentCatalog 
           onAddToQuote={handleAddToQuote}
+          onUpdateQuantity={handleUpdateQuantity}
+          onClearQuote={handleClearQuote}
           selectedEquipment={selectedEquipment}
           onOpenBooking={handleOpenBooking}
         />
@@ -102,6 +119,7 @@ export default function App() {
         isOpen={isBookingOpen}
         onClose={handleCloseBooking}
         initialService={bookingService}
+        quoteItems={selectedEquipment}
       />
 
       {isVisitingCardModalOpen && (
@@ -110,6 +128,9 @@ export default function App() {
           onClose={handleCloseVisitingCardModal}
         />
       )}
+
+      {/* Floating WhatsApp Contact Button */}
+      <WhatsAppButton />
 
     </div>
   );

@@ -17,12 +17,36 @@ export const IMAGES = {
   // Team Member Professional Photos
   headEngineer: "https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=400&q=80",
   ashishDesigner: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80",
-  priyaEngineer: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=400&q=80",
-  marcusElectrician: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=400&q=80",
-  ananyaData: "https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=400&q=80",
 
   // Hero background
   heroBg: "https://images.unsplash.com/photo-1509391365360-2e959784a276?auto=format&fit=crop&w=1600&q=80"
+};
+
+// Central dual-currency config — Indian Rupee is primary, US Dollar secondary.
+// `rate` = ₹ per 1 USD (reference conversion). Change it in ONE place to
+// re-convert the entire site (catalog + calculator).
+export const CURRENCY = {
+  rate: 85,
+  formatINR: (amount) => "₹" + Math.round(amount).toLocaleString("en-IN"),
+  formatUSD: (amount) => "$" + Math.round(amount).toLocaleString("en-US"),
+  inrFromUSD: (usd) => Math.round(usd * CURRENCY.rate),
+  usdFromINR: (inr) => Math.round(inr / CURRENCY.rate),
+};
+
+// Engineering assumptions used by the sizing calculator (INR-based).
+export const SOLAR_ASSUMPTIONS = {
+  tariffPerKwhInr: 10, // average retail electricity tariff per kWh (high-slab residential / commercial)
+  monthlyGenPerKw: 125, // kWh generated per installed kW per month
+  billPerKwHome: 1000, // ₹/month bill offset per kW (residential)
+  billPerKwBuilding: 900, // ₹/month bill offset per kW (commercial)
+  sqFtPerKwHome: 100, // usable rooftop area per kW (residential, spaced layout)
+  sqFtPerKwBuilding: 90, // usable rooftop area per kW (commercial, ballasted tilt)
+  equipmentCostPerKwHome: 80000, // all-in panels + inverter per kW
+  equipmentCostPerKwBuilding: 65000,
+  batteryCostHome: 285000, // 15.2 kWh residential vault
+  batteryCostBuilding: 900000, // 50 kWh commercial bank
+  designFee: 25000, // custom CAD + engineering review
+  installFeePct: 0.15, // installation & grid interconnection (% of equipment)
 };
 
 export const COMPANY_INFO = {
@@ -33,7 +57,8 @@ export const COMPANY_INFO = {
   projectsCompleted: "1,250+",
   totalMegawatts: "380+ MW",
   customerSatisfaction: "99.4%",
-  phone: "+1 (800) 555-GRID",
+  phone: "+91 7200745180",
+  phoneDisplay: "+91 72007 45180",
   directPhone: "+91 7200745180",
   email: "contactgridmaster@gmail.com",
   address: "Solar Tech Park, Suite 402, Clean Energy Corridor, Hyderabad / Global HQ",
@@ -77,63 +102,6 @@ export const TEAM_MEMBERS = [
     initials: "AK",
     isHead: false,
     skills: ["3D Roof Modeling", "Single Line Diagrams", "String Sizing", "HelioScope", "AutoCAD Electrical", "Shading Analysis"]
-  },
-  {
-    id: "priya",
-    name: "Priya Sharma",
-    shortName: "P. Sharma",
-    title: "Grid Integration Specialist",
-    role: "Lead Power Systems Engineer",
-    badge: "Storage & Grid Lead",
-    specialization: "Smart Grid Integration & Energy Storage Systems",
-    experience: "6+ Years",
-    credentials: "M.S. Energy Systems Engineering",
-    bio: "Priya focuses on hybrid battery integration, microgrid controls, and remote telemetry monitoring systems for seamless residential and commercial solar adoption.",
-    projects: "190+ Integrations",
-    email: "contactgridmaster@gmail.com",
-    phone: "+91 7200745182",
-    avatar: IMAGES.priyaEngineer,
-    initials: "PS",
-    isHead: false,
-    skills: ["Battery Management Systems", "Microgrid Controls", "SCADA Integration", "Energy Auditing"]
-  },
-  {
-    id: "marcus",
-    name: "Marcus Vance",
-    shortName: "M. Vance",
-    title: "Senior Installation Manager",
-    role: "Field Engineering Director",
-    badge: "Field Operations Director",
-    specialization: "Structural Racking, Inverter Commissioning & On-Site Safety",
-    experience: "9+ Years",
-    credentials: "Licensed Master Electrician, OSHA 30",
-    bio: "Marcus directs field engineering teams, ensuring flawless hardware installation, mounting durability against wind loads, and national electric code compliance.",
-    projects: "340+ Installations",
-    email: "contactgridmaster@gmail.com",
-    phone: "+1 (800) 555-4743",
-    avatar: IMAGES.marcusElectrician,
-    initials: "MV",
-    isHead: false,
-    skills: ["On-site Commissioning", "Structural Load Testing", "Transformer Hookup", "NEC Code Audit"]
-  },
-  {
-    id: "ananya",
-    name: "Ananya Patel",
-    shortName: "A. Patel",
-    title: "Solar Yield & Financial Analyst",
-    role: "Energy Yield Optimization Engineer",
-    badge: "ROI & Yield Analyst",
-    specialization: "Photovoltaic Performance Forecasting & Economic ROI Modeling",
-    experience: "5+ Years",
-    credentials: "B.E. Electrical Engineering, Data Analytics Certified",
-    bio: "Ananya builds financial ROI forecasts, degradation models, and custom generation curves so clients can maximize energy independence and grid feed-in tariffs.",
-    projects: "210+ Yield Analytics",
-    email: "contactgridmaster@gmail.com",
-    phone: "+91 7200745184",
-    avatar: IMAGES.ananyaData,
-    initials: "AP",
-    isHead: false,
-    skills: ["Yield Forecasting", "Tariff Calculations", "Financial Modeling", "Degradation Analysis"]
   }
 ];
 
@@ -146,7 +114,8 @@ export const EQUIPMENT_CATALOG = [
     wattage: "550W",
     efficiency: "22.8% Glass-Glass Bifacial",
     warranty: "30-Year Performance / 25-Year Product Warranty",
-    pricePerUnit: 185,
+    pricePerUnit: 185, // USD reference
+    priceINR: 14499, // primary display price (₹)
     unit: "per panel",
     image: IMAGES.solarPanel,
     badge: "Top Efficiency 2026",
@@ -165,7 +134,8 @@ export const EQUIPMENT_CATALOG = [
     wattage: "10 kW AC / 15 kW DC Input",
     efficiency: "98.6% European Efficiency",
     warranty: "10-Year Comprehensive Warranty",
-    pricePerUnit: 1450,
+    pricePerUnit: 1450, // USD reference
+    priceINR: 115000, // primary display price (₹)
     unit: "per unit",
     image: IMAGES.solarInverter,
     badge: "Smart Grid Sync",
@@ -184,7 +154,8 @@ export const EQUIPMENT_CATALOG = [
     wattage: "15.2 kWh Energy / 7.6 kW Continuous Output",
     efficiency: "96.5% Round-Trip Efficiency",
     warranty: "10-Year Unlimited Cycle Warranty (6,000+ Cycles)",
-    pricePerUnit: 2850,
+    pricePerUnit: 2850, // USD reference
+    priceINR: 285000, // primary display price (₹)
     unit: "per vault",
     image: IMAGES.batteryVault,
     badge: "Zero Cobalt Safety",
@@ -203,7 +174,8 @@ export const EQUIPMENT_CATALOG = [
     wattage: "Supports 10kW to 500kW Arrays",
     efficiency: "+35% Energy Boost vs Fixed Flat Roof",
     warranty: "25-Year Structural Integrity Guarantee",
-    pricePerUnit: 620,
+    pricePerUnit: 620, // USD reference
+    priceINR: 47999, // primary display price (₹)
     unit: "per 5kW set",
     image: IMAGES.solarRacking,
     badge: "180 MPH Wind Rated",
