@@ -80,8 +80,8 @@ export default function Footer({ onOpenBooking, onOpenVisitingCard }) {
                 <div className="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center flex-shrink-0">
                   <Phone className="w-3.5 h-3.5 text-amber-400" />
                 </div>
-                <a href={`tel:${COMPANY_INFO.directPhone}`} className="text-amber-300 font-bold font-mono text-sm hover:underline">
-                  {COMPANY_INFO.directPhone}
+                <a href={`tel:${COMPANY_INFO.directPhone.replace(/\s/g, "")}`} className="text-amber-300 font-bold font-mono text-sm hover:underline">
+                  {COMPANY_INFO.phoneDisplay}
                 </a>
               </li>
 

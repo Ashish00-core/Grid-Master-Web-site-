@@ -54,6 +54,31 @@ body {
   background: #f59e0b;
 }
 
+/* Hide scrollbar utility (used by filter tab strips) */
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* Keep anchored sections clear of the fixed navbar */
+section[id] {
+  scroll-margin-top: 5.5rem;
+}
+
+/* Respect users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 /* 3D Flip Card Effect */
 .perspective-1000 {
   perspective: 1000px;

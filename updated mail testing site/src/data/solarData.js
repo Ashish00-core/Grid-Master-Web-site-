@@ -25,6 +25,31 @@ export const IMAGES = {
   heroBg: "https://images.unsplash.com/photo-1509391365360-2e959784a276?auto=format&fit=crop&w=1600&q=80"
 };
 
+// Central currency config — change `code`/`symbol`/`locale` in one place
+// to re-price the entire site (catalog + calculator).
+export const CURRENCY = {
+  code: "USD",
+  symbol: "$",
+  locale: "en-US",
+  format: (amount) =>
+    CURRENCY.symbol + Math.round(amount).toLocaleString(CURRENCY.locale),
+};
+
+// Engineering assumptions used by the sizing calculator.
+// Values are expressed in the active CURRENCY (see CURRENCY above).
+export const SOLAR_ASSUMPTIONS = {
+  tariffPerKwh: 0.22, // average retail electricity tariff per kWh
+  monthlyGenPerKw: 125, // kWh generated per installed kW per month
+  sqFtPerKwHome: 100, // usable rooftop area per kW (residential, spaced layout)
+  sqFtPerKwBuilding: 90, // usable rooftop area per kW (commercial, ballasted tilt)
+  equipmentCostPerKwHome: 1100, // all-in panels + inverter per kW
+  equipmentCostPerKwBuilding: 950,
+  batteryCostHome: 3800, // 15.2 kWh residential vault
+  batteryCostBuilding: 12500, // 50 kWh commercial bank
+  designFee: 450, // custom CAD + engineering review
+  installFeePct: 0.18, // installation & grid interconnection (% of equipment)
+};
+
 export const COMPANY_INFO = {
   name: "Grid Master",
   tagline: "Precision Solar Engineering, 3D Array Design & Seamless Grid Integration",
@@ -33,7 +58,8 @@ export const COMPANY_INFO = {
   projectsCompleted: "1,250+",
   totalMegawatts: "380+ MW",
   customerSatisfaction: "99.4%",
-  phone: "+1 (800) 555-GRID",
+  phone: "+91 7200745180",
+  phoneDisplay: "+91 72007 45180",
   directPhone: "+91 7200745180",
   email: "contactgridmaster@gmail.com",
   address: "Solar Tech Park, Suite 402, Clean Energy Corridor, Hyderabad / Global HQ",
@@ -110,7 +136,6 @@ export const TEAM_MEMBERS = [
     bio: "Marcus directs field engineering teams, ensuring flawless hardware installation, mounting durability against wind loads, and national electric code compliance.",
     projects: "340+ Installations",
     email: "contactgridmaster@gmail.com",
-    phone: "+1 (800) 555-4743",
     avatar: IMAGES.marcusElectrician,
     initials: "MV",
     isHead: false,

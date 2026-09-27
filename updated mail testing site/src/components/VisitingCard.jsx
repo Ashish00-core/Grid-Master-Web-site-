@@ -1,19 +1,45 @@
-import React, { useState } from 'react';
-import { 
-  Sun, ShieldCheck, Phone, Mail, MapPin, Award, 
+import React, { useState, useEffect } from 'react';
+import {
+  Sun, ShieldCheck, Phone, Mail, MapPin, Award,
   Download, Copy, Check, RotateCw, Sparkles, Building2, Home, Cpu
 } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { TEAM_MEMBERS, COMPANY_INFO } from '../data/solarData';
 
 export default function VisitingCard({ isModal = false, onClose }) {
   const [isFlipped, setIsFlipped] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  // Close on Escape + lock background scroll while the modal card is open
+  useEffect(() => {
+    if (!isModal) return undefined;
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose?.();
+    };
+    document.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [isModal, onClose]);
+
   const headEngineer = TEAM_MEMBERS.find(m => m.id === 'g-gowtham') || TEAM_MEMBERS[0];
+  const vCardUrl = `tel:${headEngineer.phone.replace(/[^+\d]/g, '')}`;
 
   const handleCopyContact = () => {
-    const infoText = `${headEngineer.name} - Head Engineer\nSolar Designing Engineer & Electrical Engineer\nCompany: Grid Master\nPhone: ${headEngineer.phone}\nEmail: ${headEngineer.email}\nWebsite: https://gridmaster.sol`;
-    navigator.clipboard.writeText(infoText);
+    const infoText = `${headEngineer.name} - Head Engineer\nSolar Designing Engineer & Electrical Engineer\nCompany: Grid Master\nPhone: ${headEngineer.phone}\nEmail: ${headEngineer.email}\nAddress: ${COMPANY_INFO.address}`;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(infoText).catch(() => {});
+    } else {
+      const ta = document.createElement("textarea");
+      ta.value = infoText;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); } catch { /* noop */ }
+      document.body.removeChild(ta);
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
   };
@@ -29,7 +55,6 @@ TEL;TYPE=CELL:${headEngineer.phone}
 TEL;TYPE=WORK:${COMPANY_INFO.phone}
 EMAIL;TYPE=WORK:${headEngineer.email}
 ADR;TYPE=WORK:;;Solar Tech Park, Suite 402;Hyderabad;Telangana;500081;India
-URL:https://gridmaster.sol
 NOTE:Head Engineer at Grid Master. Expert in Solar Designing & High-Voltage Electrical Engineering.
 END:VCARD`;
 
@@ -238,16 +263,20 @@ END:VCARD`;
             {/* QR Code Simulation & Sign Off */}
             <div className="flex items-center justify-between pt-3 border-t border-slate-800">
               <div className="flex items-center gap-3">
-                {/* Simulated QR Code SVG */}
-                <div className="w-14 h-14 bg-white p-1 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <svg className="w-full h-full text-slate-950" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M2,2H10V10H2V2M4,4V8H8V4H4M11,2H13V4H11V2M14,2H22V10H14V2M16,4V8H20V4H16M2,14H10V22H2V14M4,16V20H8V16H4M19,14V17H22V19H19V22H17V14H19M11,16H13V18H11V16M11,19H14V22H11V19M14,11H16V13H14V11M17,11H19V13H17V11M11,6H13V8H11V6M11,9H13V11H11V9Z"/>
-                  </svg>
+                {/* Real scannable QR — opens a direct call to the Head Engineer */}
+                <div className="w-16 h-16 bg-white p-1.5 rounded-lg flex items-center justify-center flex-shrink-0 shadow-md">
+                  <QRCodeSVG
+                    value={vCardUrl}
+                    size={56}
+                    level="M"
+                    bgColor="#ffffff"
+                    fgColor="#020617"
+                  />
                 </div>
                 <div className="text-[11px]">
                   <p className="text-white font-bold">Scan to Connect Directly</p>
                   <p className="text-amber-400 font-mono text-[10px]">G. GOUTHAM • Head Engineer</p>
-                  <p className="text-slate-400 text-[10px]">Ph: +91 7200745180</p>
+                  <p className="text-slate-400 text-[10px]">Ph: {headEngineer.phone}</p>
                 </div>
               </div>
 
