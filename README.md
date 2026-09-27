@@ -2,7 +2,7 @@
 
 **Grid Master** is a modern, high-performance web platform for solar systems engineering, rooftop 3D designing, equipment price cataloging, and turnkey installation & grid integration. Designed for both **Home (Residential)** and **Building (Commercial)** solar purpose requirements.
 
-The full web application lives in [`updated mail testing site/`](./updated%20mail%20testing%20site) (a React + Vite + Tailwind single-page app).
+This repository is the full web application (a React + Vite + Tailwind single-page app) — deployable directly from the repo root to Netlify, Vercel or Cloudflare Pages.
 
 ---
 
@@ -64,7 +64,6 @@ The full web application lives in [`updated mail testing site/`](./updated%20mai
 [Node.js](https://nodejs.org/) v18 or higher.
 
 ```bash
-cd "updated mail testing site"
 npm install
 npm run dev        # → http://localhost:3000
 npm run build      # production build in dist/
@@ -85,7 +84,7 @@ After activation, every booking submission is emailed as a clean table. Until ac
 
 Prices show **₹ (primary) with an ≈ $ equivalent** across the catalog, quote builder,
 calculator and booking receipts — all driven by one config in
-[`src/data/solarData.js`](./updated%20mail%20testing%20site/src/data/solarData.js):
+[`src/data/solarData.js`](./src/data/solarData.js):
 
 ```js
 export const CURRENCY = {
@@ -109,32 +108,33 @@ export const SOLAR_ASSUMPTIONS = { tariffPerKwhInr: 8, ... }; // calculator (INR
 ```
 Grid-Master-Web-site-/
 ├── README.md
-└── updated mail testing site/
-    ├── index.html
-    ├── package.json
-    ├── vite.config.js
-    ├── tailwind.config.js
-    ├── postcss.config.js
-    ├── netlify.toml
-    ├── run.bat                     # Windows one-click launcher
-    └── src/
-        ├── main.jsx
-        ├── App.jsx                 # Section composition + shared booking/quote state
-        ├── index.css               # Tailwind + flip-card 3D + utilities
-        ├── data/
-        │   └── solarData.js        # Currency, assumptions, team, catalog, samples, FAQs
-        └── components/
-            ├── Navbar.jsx          # Sticky header nav + quick actions
-            ├── Hero.jsx            # Hero banner with primary CTAs
-            ├── VisitingCard.jsx    # 3D flippable card, real QR, vCard download
-            ├── Services.jsx        # Home & Building service capabilities
-            ├── DesignSamples.jsx   # Blueprint portfolio & CAD inspection modal
-            ├── EquipmentCatalog.jsx# Store, search/filter, quote builder w/ quantities
-            ├── SolarCalculator.jsx # Sizing & ROI engine (roof-aware)
-            ├── Team.jsx            # Engineering roster
-            ├── BookingModal.jsx    # Booking form + FormSubmit dispatch + receipt
-            ├── Testimonials.jsx    # Reviews & FAQ accordion
-            └── Footer.jsx          # Footer links & contact
+├── index.html
+├── package.json
+├── vite.config.js
+├── tailwind.config.js
+├── postcss.config.js
+├── netlify.toml                    # Netlify build & deploy config
+├── run.bat                         # Windows one-click launcher
+├── public/
+└── src/
+    ├── main.jsx
+    ├── App.jsx                     # Section composition + shared booking/quote state
+    ├── index.css                   # Tailwind + flip-card 3D + utilities
+    ├── data/
+    │   └── solarData.js            # Currency, assumptions, team, catalog, samples, FAQs
+    └── components/
+        ├── Navbar.jsx              # Sticky header nav + quick actions
+        ├── Hero.jsx                # Hero banner with primary CTAs
+        ├── VisitingCard.jsx        # 3D flippable card, real QR, vCard download
+        ├── Services.jsx            # Home & Building service capabilities
+        ├── DesignSamples.jsx       # Blueprint portfolio & CAD inspection modal
+        ├── EquipmentCatalog.jsx    # Store, search/filter, quote builder w/ quantities
+        ├── SolarCalculator.jsx     # Sizing & ROI engine (roof-aware)
+        ├── Team.jsx                # Engineering roster
+        ├── BookingModal.jsx        # Booking form + FormSubmit dispatch + receipt
+        ├── Testimonials.jsx        # Reviews & FAQ accordion
+        ├── Footer.jsx              # Footer links & contact
+        └── WhatsAppButton.jsx      # Floating WhatsApp contact button
 ```
 
 ---
