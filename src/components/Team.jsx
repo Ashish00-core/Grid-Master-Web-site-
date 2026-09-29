@@ -11,22 +11,9 @@ export default function Team({ onOpenVisitingCard, onOpenBooking }) {
   const otherEngineers = TEAM_MEMBERS.filter(m => m.id !== 'g-gowtham' && m.id !== 'ashish');
 
   return (
-    <section id="team" className="py-20 sm:py-28 bg-slate-900/50 relative overflow-hidden">
+    <section id="team" className="pt-4 pb-16 sm:pb-24 bg-slate-950 relative overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         
-        {/* Section Header */}
-        <div className="text-center max-w-3xl mx-auto mb-16">
-          <span className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-bold uppercase tracking-widest">
-            <Users className="w-3.5 h-3.5" />
-            Engineering Leadership & Team Roster
-          </span>
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black text-white mt-4 tracking-tight">
-            Our Certified <span className="solar-gradient-text">Solar & Electrical Engineers</span>
-          </h2>
-          <p className="text-slate-300 text-sm sm:text-base mt-4">
-            Meet the Grid Master engineering team dedicated to high-performance residential and commercial solar designs, electrical schematics, and seamless grid integration.
-          </p>
-        </div>
 
         {/* FEATURED HEAD ENGINEER CARD: GANDHAMANENI GOUTHAM (INITIAL BADGE ONLY) */}
         <div className="mb-12 rounded-3xl bg-gradient-to-r from-slate-950 via-slate-900 to-amber-950/60 border-2 border-amber-500/50 p-6 sm:p-10 shadow-2xl gold-border-glow relative overflow-hidden group">

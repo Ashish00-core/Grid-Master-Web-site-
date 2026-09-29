@@ -41,23 +41,9 @@ export default function SolarCalculator({ onOpenBooking }) {
   const twentyFiveYearSavings = Math.max(0, Math.round(annualSavings * 25 - totalProjectCost));
 
   return (
-    <section id="calculator" className="py-20 sm:py-28 bg-slate-950 relative overflow-hidden border-t border-amber-500/10">
+    <section id="calculator" className="pt-4 pb-16 sm:pb-24 bg-slate-950 relative overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         
-        {/* Header */}
-        <div className="text-center max-w-3xl mx-auto mb-16">
-          <span className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-bold uppercase tracking-widest">
-            <Calculator className="w-3.5 h-3.5" />
-            Interactive System Design & ROI Engine
-          </span>
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black text-white mt-4 tracking-tight">
-            Calculate Solar Needs for <br className="hidden sm:block" />
-            <span className="solar-gradient-text">Your Home or Building</span>
-          </h2>
-          <p className="text-slate-300 text-sm sm:text-base mt-4">
-            Input your property specifications below to receive an instant estimate of solar generation, cost breakdown, ROI timeline, and custom equipment sizing.
-          </p>
-        </div>
 
         {/* Calculator Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">

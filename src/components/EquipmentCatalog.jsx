@@ -30,22 +30,9 @@ export default function EquipmentCatalog({ onAddToQuote, onUpdateQuantity, selec
   const totalQuoteUnits = selectedEquipment.reduce((sum, item) => sum + (item.quantity || 1), 0);
 
   return (
-    <section id="equipment" className="py-20 sm:py-28 bg-slate-900/40 relative overflow-hidden">
+    <section id="equipment" className="pt-4 pb-16 sm:pb-24 bg-slate-950 relative overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         
-        {/* Header */}
-        <div className="text-center max-w-3xl mx-auto mb-12">
-          <span className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-bold uppercase tracking-widest">
-            <ShoppingBag className="w-3.5 h-3.5" />
-            Solar Installation Equipment & Transparent Pricing
-          </span>
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black text-white mt-4 tracking-tight">
-            Tier-1 Solar Hardware <span className="solar-gradient-text">& Component Prices</span>
-          </h2>
-          <p className="text-slate-300 text-sm sm:text-base mt-4">
-            Explore authentic prices for high-efficiency N-type solar modules, smart hybrid inverters, LiFePO4 battery banks, and wind-tested racking systems certified by Grid Master.
-          </p>
-        </div>
 
         {/* Search & Category Filter Bar */}
         <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-slate-950 p-4 rounded-3xl border border-slate-800 mb-10">
