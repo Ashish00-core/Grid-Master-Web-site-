@@ -32,24 +32,15 @@ export default function DesignSamples({ onOpenBooking }) {
   });
 
   return (
-    <section id="design-samples" className="py-20 sm:py-28 bg-slate-950 relative overflow-hidden">
+    <section id="design-samples" className="pt-4 pb-16 sm:pb-24 bg-slate-950 relative overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         
         {/* Section Header */}
-        <div className="text-center max-w-3xl mx-auto mb-16">
-          <span className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-bold uppercase tracking-widest">
-            <FileSpreadsheet className="w-3.5 h-3.5" />
-            Engineering Portfolio & Case Samples
-          </span>
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black text-white mt-4 tracking-tight">
-            Solar Designing <span className="solar-gradient-text">Samples & CAD Blueprints</span>
-          </h2>
-          <p className="text-slate-300 text-sm sm:text-base mt-4">
-            Explore our real-world 3D layout blueprints, shading path models, and single line diagrams created by Head Engineer <strong className="text-amber-400">GANDHAMANENI GOUTHAM</strong> and Solar Designer <strong className="text-amber-300">Ashish Kumar</strong>.
-          </p>
+        <div className="text-center mb-10">
+          
 
           {/* Filter Buttons */}
-          <div className="inline-flex p-1 rounded-xl bg-slate-900 border border-slate-800 mt-8 gap-1">
+          <div className="inline-flex p-1 rounded-xl bg-slate-900 border border-slate-800 gap-1">
             <button
               onClick={() => setFilter('all')}
               className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${

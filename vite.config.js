@@ -1,8 +1,9 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-export default defineConfig(({ command }) => ({
-  base: command === 'build' ? './' : '/',
+export default defineConfig(() => ({
+  // Absolute base so deep links like /services load their assets correctly
+  base: '/',
   plugins: [react()],
   build: {
     target: 'es2020',

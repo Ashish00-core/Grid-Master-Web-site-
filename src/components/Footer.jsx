@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { Sun, Phone, Mail, MapPin, Award, ShieldCheck, Heart, CreditCard } from 'lucide-react';
 import { COMPANY_INFO, TEAM_MEMBERS } from '../data/solarData';
 
@@ -13,7 +14,7 @@ export default function Footer({ onOpenBooking, onOpenVisitingCard }) {
           
           {/* Col 1: Brand Info (4 cols) */}
           <div className="lg:col-span-4 space-y-4">
-            <a href="#" className="flex items-center gap-3">
+            <Link to="/" className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-yellow-600 p-0.5 shadow-lg shadow-amber-500/20">
                 <div className="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center">
                   <Sun className="w-6 h-6 text-amber-400" />
@@ -22,7 +23,7 @@ export default function Footer({ onOpenBooking, onOpenVisitingCard }) {
               <span className="text-2xl font-black text-white tracking-wider">
                 GRID<span className="text-amber-400">MASTER</span>
               </span>
-            </a>
+            </Link>
 
             <p className="text-xs sm:text-sm text-slate-400 max-w-sm leading-relaxed">
               {COMPANY_INFO.description}
@@ -45,11 +46,12 @@ export default function Footer({ onOpenBooking, onOpenVisitingCard }) {
               Website Navigation
             </h4>
             <ul className="space-y-2.5 text-xs text-slate-300">
-              <li><a href="#services" className="hover:text-amber-400 transition-colors">Services Scope</a></li>
-              <li><a href="#design-samples" className="hover:text-amber-400 transition-colors">Designing Samples & CAD</a></li>
-              <li><a href="#equipment" className="hover:text-amber-400 transition-colors">Equipment & Prices</a></li>
-              <li><a href="#calculator" className="hover:text-amber-400 transition-colors">Solar System Calculator</a></li>
-              <li><a href="#team" className="hover:text-amber-400 transition-colors">Engineering Team</a></li>
+              <li><Link to="/services" className="hover:text-amber-400 transition-colors">Services Scope</Link></li>
+              <li><Link to="/design-samples" className="hover:text-amber-400 transition-colors">Designing Samples & CAD</Link></li>
+              <li><Link to="/equipment" className="hover:text-amber-400 transition-colors">Equipment & Prices</Link></li>
+              <li><Link to="/calculator" className="hover:text-amber-400 transition-colors">Solar System Calculator</Link></li>
+              <li><Link to="/team" className="hover:text-amber-400 transition-colors">Engineering Team</Link></li>
+              <li><Link to="/contact" className="hover:text-amber-400 transition-colors">Contact Us</Link></li>
             </ul>
           </div>
 

@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { 
   Sun, Shield, Zap, CheckCircle2, ArrowRight, Home, Building2, 
   Sparkles, Award, FileSpreadsheet, PhoneCall, Cpu 
@@ -70,13 +71,13 @@ export default function Hero({ onOpenBooking, onOpenVisitingCard }) {
                 <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
               </button>
 
-              <a
-                href="#design-samples"
+              <Link
+                to="/design-samples"
                 className="w-full sm:w-auto px-6 py-4 rounded-2xl bg-slate-900 border border-slate-800 hover:border-amber-500/40 text-slate-200 hover:text-white font-bold text-base transition-all flex items-center justify-center gap-2"
               >
                 <FileSpreadsheet className="w-5 h-5 text-amber-400" />
                 <span>Explore Design Samples</span>
-              </a>
+              </Link>
             </div>
 
             {/* Engineering Leadership Banner */}

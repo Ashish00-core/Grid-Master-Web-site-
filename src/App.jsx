@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
+import { Routes, Route, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar';
-import Hero from './components/Hero';
+import ScrollToTop from './components/ScrollToTop';
+import HomePage from './pages/HomePage';
+import ServicesPage from './pages/ServicesPage';
+import DesignSamplesPage from './pages/DesignSamplesPage';
+import EquipmentPage from './pages/EquipmentPage';
+import CalculatorPage from './pages/CalculatorPage';
+import TeamPage from './pages/TeamPage';
+import ContactPage from './pages/ContactPage';
+import NotFoundPage from './pages/NotFoundPage';
 import VisitingCard from './components/VisitingCard';
-import Services from './components/Services';
-import DesignSamples from './components/DesignSamples';
-import EquipmentCatalog from './components/EquipmentCatalog';
-import SolarCalculator from './components/SolarCalculator';
-import Team from './components/Team';
-import Testimonials from './components/Testimonials';
 import Footer from './components/Footer';
 import BookingModal from './components/BookingModal';
 import WhatsAppButton from './components/WhatsAppButton';
@@ -17,6 +20,7 @@ export default function App() {
   const [bookingService, setBookingService] = useState('');
   const [isVisitingCardModalOpen, setIsVisitingCardModalOpen] = useState(false);
   const [selectedEquipment, setSelectedEquipment] = useState([]);
+  const { pathname } = useLocation();
 
   const handleOpenBooking = (serviceName = '') => {
     setBookingService(serviceName);
@@ -61,51 +65,39 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-amber-500 selection:text-slate-950">
       
+      <ScrollToTop />
+
       {/* Sticky Header */}
       <Navbar 
         onOpenBooking={handleOpenBooking} 
         onOpenVisitingCard={handleOpenVisitingCardModal}
       />
 
-      {/* Main Content Sections */}
+      {/* Each menu item is its own page */}
       <main className="flex-grow">
-        
-        {/* Hero Section */}
-        <Hero 
-          onOpenBooking={handleOpenBooking} 
-          onOpenVisitingCard={handleOpenVisitingCardModal}
-        />
-
-        {/* Head Engineer Visiting Card Section */}
-        <VisitingCard />
-
-        {/* Core Services (Home & Building) */}
-        <Services onOpenBooking={handleOpenBooking} />
-
-        {/* Solar Designing Samples & CAD Portfolio */}
-        <DesignSamples onOpenBooking={handleOpenBooking} />
-
-        {/* Equipment Catalog & Transparent Prices */}
-        <EquipmentCatalog 
-          onAddToQuote={handleAddToQuote}
-          onUpdateQuantity={handleUpdateQuantity}
-          onClearQuote={handleClearQuote}
-          selectedEquipment={selectedEquipment}
-          onOpenBooking={handleOpenBooking}
-        />
-
-        {/* Solar Needs Calculator & System Engine */}
-        <SolarCalculator onOpenBooking={handleOpenBooking} />
-
-        {/* Employee List & Head Engineer GANDHAMANENI GOUTHAM & Ashish Kumar */}
-        <Team 
-          onOpenVisitingCard={handleOpenVisitingCardModal}
-          onOpenBooking={handleOpenBooking}
-        />
-
-        {/* Customer Reviews & FAQs */}
-        <Testimonials />
-
+        <div key={pathname} className="page-enter">
+          <Routes>
+            <Route path="/" element={<HomePage onOpenBooking={handleOpenBooking} onOpenVisitingCard={handleOpenVisitingCardModal} />} />
+            <Route path="/services" element={<ServicesPage onOpenBooking={handleOpenBooking} />} />
+            <Route path="/design-samples" element={<DesignSamplesPage onOpenBooking={handleOpenBooking} />} />
+            <Route
+              path="/equipment"
+              element={
+                <EquipmentPage
+                  onAddToQuote={handleAddToQuote}
+                  onUpdateQuantity={handleUpdateQuantity}
+                  onClearQuote={handleClearQuote}
+                  selectedEquipment={selectedEquipment}
+                  onOpenBooking={handleOpenBooking}
+                />
+              }
+            />
+            <Route path="/calculator" element={<CalculatorPage onOpenBooking={handleOpenBooking} />} />
+            <Route path="/team" element={<TeamPage onOpenVisitingCard={handleOpenVisitingCardModal} onOpenBooking={handleOpenBooking} />} />
+            <Route path="/contact" element={<ContactPage onOpenBooking={handleOpenBooking} onOpenVisitingCard={handleOpenVisitingCardModal} />} />
+            <Route path="*" element={<NotFoundPage />} />
+          </Routes>
+        </div>
       </main>
 
       {/* Footer */}

@@ -15,25 +15,15 @@ export default function Services({ onOpenBooking }) {
   });
 
   return (
-    <section id="services" className="py-20 sm:py-28 bg-slate-900/60 relative overflow-hidden">
+    <section id="services" className="pt-4 pb-16 sm:pb-24 bg-slate-950 relative overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         
         {/* Section Header */}
-        <div className="text-center max-w-3xl mx-auto mb-16">
-          <span className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-bold uppercase tracking-widest">
-            <Layers className="w-3.5 h-3.5" />
-            Engineering & Integration Capabilities
-          </span>
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black text-white mt-4 tracking-tight">
-            Complete Solar Solutions for <br className="hidden sm:block" />
-            <span className="solar-gradient-text">Homes & Commercial Buildings</span>
-          </h2>
-          <p className="text-slate-300 text-sm sm:text-base mt-4">
-            From single-family rooftop designs to megawatt commercial building integration, Grid Master delivers end-to-end solar engineering, installation, and utility grid interconnection.
-          </p>
+        <div className="text-center mb-10">
+          
 
           {/* Home vs Building Tabs */}
-          <div className="inline-flex p-1.5 rounded-2xl bg-slate-950 border border-slate-800 mt-8 gap-1">
+          <div className="inline-flex p-1.5 rounded-2xl bg-slate-950 border border-slate-800 gap-1">
             <button
               onClick={() => setActiveTab('all')}
               className={`px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all ${

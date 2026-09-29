@@ -2,7 +2,25 @@
 
 **Grid Master** is a modern, high-performance web platform for solar systems engineering, rooftop 3D designing, equipment price cataloging, and turnkey installation & grid integration. Designed for both **Home (Residential)** and **Building (Commercial)** solar purpose requirements.
 
-This repository is the full web application (a React + Vite + Tailwind single-page app) — deployable directly from the repo root to Netlify, Vercel or Cloudflare Pages.
+This repository is the full web application (a React + Vite + Tailwind + React Router multi-page app — every menu item opens its own page) — deployable directly from the repo root to Netlify, Vercel or Cloudflare Pages.
+
+---
+
+## 🧭 Site Pages
+
+| URL | Page |
+| --- | --- |
+| `/` | Home — hero, stats, service highlights, process, reviews, call-to-action |
+| `/services` | Services (Home / Building) |
+| `/design-samples` | Design Samples & CAD blueprints |
+| `/equipment` | Equipment & Prices with quote builder |
+| `/calculator` | Solar system calculator |
+| `/team` | Engineering team + Head Engineer visiting card |
+| `/contact` | Contact details, booking and FAQ |
+
+Menu links open real pages (no fast in-page scrolling); each page opens at the top with a soft fade-in.
+Because these are real URLs the host must serve `index.html` for unknown paths — already configured for
+Netlify (`netlify.toml`, `public/_redirects`) and Vercel (`vercel.json`). For a local static server use `npx serve -s dist`.
 
 ---
 

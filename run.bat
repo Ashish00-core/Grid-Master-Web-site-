@@ -8,7 +8,7 @@ echo Opening http://localhost:3000 in your browser...
 echo.
 
 if exist dist (
-  npx serve dist -p 3000
+  npx serve -s dist -p 3000
 ) else (
   npm run dev
 )

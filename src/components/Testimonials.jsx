@@ -2,15 +2,19 @@ import React, { useState } from 'react';
 import { MessageSquareQuote, Star, ChevronDown, ChevronUp, HelpCircle } from 'lucide-react';
 import { TESTIMONIALS, FAQS } from '../data/solarData';
 
-export default function Testimonials() {
+export default function Testimonials({ mode = 'reviews' }) {
+  const showReviews = mode === 'reviews' || mode === 'all';
+  const showFaq = mode === 'faq' || mode === 'all';
   const [openFaq, setOpenFaq] = useState(0);
 
   return (
-    <section className="py-20 sm:py-28 bg-slate-900/60 relative overflow-hidden">
+    <section className={`${showReviews ? 'py-20 sm:py-28 bg-slate-900/60' : 'pt-4 pb-20 sm:pb-24 bg-slate-950'} relative overflow-hidden`}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         
+        {showReviews && (
+        <>
         {/* Testimonials Header */}
-        <div className="text-center max-w-3xl mx-auto mb-16">
+        <div className="text-center max-w-3xl mx-auto mb-12">
           <span className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-bold uppercase tracking-widest">
             <MessageSquareQuote className="w-3.5 h-3.5" />
             Client Reviews & Trust
@@ -24,7 +28,7 @@ export default function Testimonials() {
         </div>
 
         {/* Reviews Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-20">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {TESTIMONIALS.map((t) => (
             <div
               key={t.id}
@@ -54,7 +58,11 @@ export default function Testimonials() {
           ))}
         </div>
 
+        </>
+        )}
+
         {/* FAQs Section */}
+        {showFaq && (
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-10">
             <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 text-amber-400 text-xs font-bold uppercase tracking-widest border border-amber-500/20">
@@ -93,6 +101,8 @@ export default function Testimonials() {
             ))}
           </div>
         </div>
+
+        )}
 
       </div>
     </section>

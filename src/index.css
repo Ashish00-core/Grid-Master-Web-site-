@@ -63,9 +63,14 @@ body {
   display: none;
 }
 
-/* Keep anchored sections clear of the fixed navbar */
-section[id] {
-  scroll-margin-top: 5.5rem;
+/* Gentle fade-in whenever a new page opens (opacity only, so fixed-position
+   modals inside pages are never affected by a transform) */
+@keyframes page-enter {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.page-enter {
+  animation: page-enter 0.45s ease-out both;
 }
 
 /* Respect users who prefer reduced motion */
