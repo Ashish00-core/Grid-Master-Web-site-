@@ -285,7 +285,7 @@ Status: ${
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md theme-backdrop animate-in fade-in duration-200"
       role="dialog"
       aria-modal="true"
       aria-label="Book a solar consultation"
@@ -434,7 +434,7 @@ Status: ${
                     min={getMinDate()}
                     max={getMaxDate()}
                     onChange={(e) => setDate(e.target.value)}
-                    className="w-full py-2.5 px-3 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-xs font-medium focus:border-amber-500 focus:outline-none [color-scheme:dark]"
+                    className="w-full py-2.5 px-3 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-xs font-medium focus:border-amber-500 focus:outline-none"
                   />
                 </div>
 
