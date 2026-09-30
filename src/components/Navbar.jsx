@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
-import { Sun, Zap, Calendar, UserCheck, Shield, Phone, Menu, X, CreditCard } from 'lucide-react';
+import { Sun, Moon, Zap, Calendar, UserCheck, Shield, Phone, Menu, X, CreditCard } from 'lucide-react';
 import { COMPANY_INFO } from '../data/solarData';
 
-export default function Navbar({ onOpenBooking, onOpenVisitingCard }) {
+export default function Navbar({ onOpenBooking, onOpenVisitingCard, theme, onToggleTheme }) {
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -96,6 +96,17 @@ export default function Navbar({ onOpenBooking, onOpenVisitingCard }) {
             </button>
 
             <button
+              type="button"
+              onClick={onToggleTheme}
+              aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+              aria-pressed={theme === 'light'}
+              title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+              className="hidden xl:inline-flex items-center justify-center p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-amber-300 hover:bg-amber-500/10 hover:border-amber-500/40 transition-colors"
+            >
+              {theme === 'dark' ? <Sun aria-hidden="true" className="w-4 h-4" /> : <Moon aria-hidden="true" className="w-4 h-4" />}
+            </button>
+
+            <button
               onClick={() => onOpenBooking()}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl whitespace-nowrap bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-500 text-slate-950 font-bold text-xs xl:text-sm shadow-md shadow-amber-500/20 hover:shadow-amber-500/40 hover:scale-[1.02] active:scale-[0.98] transition-all"
             >
@@ -105,7 +116,17 @@ export default function Navbar({ onOpenBooking, onOpenVisitingCard }) {
           </div>
 
           {/* Mobile Menu Toggle Button */}
-          <div className="flex xl:hidden items-center gap-2">
+          <div className="flex xl:hidden items-center gap-1 sm:gap-2">
+            <button
+              type="button"
+              onClick={onToggleTheme}
+              aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+              aria-pressed={theme === 'light'}
+              title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+              className="hidden min-[400px]:inline-flex p-2 rounded-xl bg-slate-900 border border-slate-800 text-amber-300 hover:bg-amber-500/10 hover:border-amber-500/40 transition-colors"
+            >
+              {theme === 'dark' ? <Sun aria-hidden="true" className="w-4 h-4" /> : <Moon aria-hidden="true" className="w-4 h-4" />}
+            </button>
             <button
               onClick={() => onOpenVisitingCard()}
               className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 sm:hidden"
@@ -128,6 +149,17 @@ export default function Navbar({ onOpenBooking, onOpenVisitingCard }) {
       {/* Mobile Menu Dropdown */}
       {mobileMenuOpen && (
         <div className="xl:hidden max-h-[calc(100vh-4.5rem)] overflow-y-auto bg-slate-950/95 border-b border-amber-500/20 px-4 pt-3 pb-6 space-y-3 backdrop-blur-xl animate-in fade-in slide-in-from-top duration-200">
+          <button
+            type="button"
+            onClick={onToggleTheme}
+            aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+            aria-pressed={theme === 'light'}
+            className="min-[400px]:hidden sm:hidden w-full flex items-center gap-2 px-3 py-2.5 rounded-lg bg-slate-900 border border-slate-800 text-amber-300 text-sm font-semibold"
+          >
+            {theme === 'dark' ? <Sun aria-hidden="true" className="w-4 h-4" /> : <Moon aria-hidden="true" className="w-4 h-4" />}
+            <span>Switch to {theme === 'dark' ? 'Light' : 'Dark'} Theme</span>
+          </button>
+
           <div className="flex flex-col space-y-2">
             {navLinks.map((link) => (
               <NavLink key={link.name} to={link.href} end={link.end} className={mobileLinkClass}>

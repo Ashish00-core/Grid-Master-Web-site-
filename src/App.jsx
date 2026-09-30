@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Routes, Route, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import ScrollToTop from './components/ScrollToTop';
@@ -16,11 +16,32 @@ import BookingModal from './components/BookingModal';
 import WhatsAppButton from './components/WhatsAppButton';
 
 export default function App() {
+  const [theme, setTheme] = useState(() =>
+    document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'
+  );
   const [isBookingOpen, setIsBookingOpen] = useState(false);
   const [bookingService, setBookingService] = useState('');
   const [isVisitingCardModalOpen, setIsVisitingCardModalOpen] = useState(false);
   const [selectedEquipment, setSelectedEquipment] = useState([]);
   const { pathname } = useLocation();
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+
+    try {
+      window.localStorage.setItem('grid-master-theme', theme);
+    } catch {
+      // The selected theme still works when storage is unavailable.
+    }
+
+    const themeColor = document.querySelector('meta[name="theme-color"]');
+    themeColor?.setAttribute('content', theme === 'light' ? '#f8fafc' : '#020617');
+  }, [theme]);
+
+  const handleToggleTheme = () => {
+    setTheme(currentTheme => currentTheme === 'dark' ? 'light' : 'dark');
+  };
 
   const handleOpenBooking = (serviceName = '') => {
     setBookingService(serviceName);
@@ -68,9 +89,11 @@ export default function App() {
       <ScrollToTop />
 
       {/* Sticky Header */}
-      <Navbar 
-        onOpenBooking={handleOpenBooking} 
+      <Navbar
+        onOpenBooking={handleOpenBooking}
         onOpenVisitingCard={handleOpenVisitingCardModal}
+        theme={theme}
+        onToggleTheme={handleToggleTheme}
       />
 
       {/* Each menu item is its own page */}

@@ -177,7 +177,7 @@ export default function DesignSamples({ onOpenBooking }) {
 
       {/* DETAILED CAD BLUEPRINT MODAL */}
       {selectedSample && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md theme-backdrop animate-in fade-in duration-200">
           <div className="relative w-full max-w-4xl bg-slate-900 border border-amber-500/40 rounded-3xl p-6 sm:p-8 max-h-[90vh] overflow-y-auto shadow-2xl">
             
             <button
