@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Link, NavLink, useLocation } from 'react-router-dom';
-import { Sun, Moon, Zap, Calendar, UserCheck, Shield, Phone, Menu, X, CreditCard } from 'lucide-react';
-import { COMPANY_INFO } from '../data/solarData';
+import { Link, NavLink } from 'react-router-dom';
+import { Sun, Moon, Calendar, Menu, X, CreditCard } from 'lucide-react';
 
 export default function Navbar({ onOpenBooking, onOpenVisitingCard, theme, onToggleTheme }) {
   const [scrolled, setScrolled] = useState(false);
@@ -14,13 +13,6 @@ export default function Navbar({ onOpenBooking, onOpenVisitingCard, theme, onTog
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
-
-  const { pathname } = useLocation();
-
-  // Close the mobile menu whenever a new page opens
-  useEffect(() => {
-    setMobileMenuOpen(false);
-  }, [pathname]);
 
   const navLinks = [
     { name: 'Home', href: '/', end: true },
@@ -162,7 +154,13 @@ export default function Navbar({ onOpenBooking, onOpenVisitingCard, theme, onTog
 
           <div className="flex flex-col space-y-2">
             {navLinks.map((link) => (
-              <NavLink key={link.name} to={link.href} end={link.end} className={mobileLinkClass}>
+              <NavLink
+                key={link.name}
+                to={link.href}
+                end={link.end}
+                className={mobileLinkClass}
+                onClick={() => setMobileMenuOpen(false)}
+              >
                 {link.name}
               </NavLink>
             ))}

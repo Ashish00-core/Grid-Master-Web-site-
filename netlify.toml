@@ -1,7 +1,20 @@
 [build]
   command = "npm run build"
   publish = "dist"
+  # Serverless e-mail endpoint lives here (optional — see server/mailProvider.mjs)
+  functions = "netlify/functions"
 
+# ---------------------------------------------------------------------------
+# API routes must be declared BEFORE the single-page-app catch-all so the
+# serverless function is never shadowed by the index.html rewrite.
+# ---------------------------------------------------------------------------
+[[redirects]]
+  from = "/api/send-booking"
+  to = "/.netlify/functions/send-booking"
+  status = 200
+  force = true
+
+# Single page app: every unknown path serves index.html (React Router handles it)
 [[redirects]]
   from = "/*"
   to = "/index.html"

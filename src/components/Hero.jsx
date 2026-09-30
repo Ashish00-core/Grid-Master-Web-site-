@@ -1,15 +1,11 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { 
-  Sun, Shield, Zap, CheckCircle2, ArrowRight, Home, Building2, 
-  Sparkles, Award, FileSpreadsheet, PhoneCall, Cpu 
+  Sun, ArrowRight, Home, Building2, Award, FileSpreadsheet, PhoneCall, Cpu 
 } from 'lucide-react';
-import { COMPANY_INFO, TEAM_MEMBERS } from '../data/solarData';
+import { COMPANY_INFO } from '../data/solarData';
 
 export default function Hero({ onOpenBooking, onOpenVisitingCard }) {
-  const headEngineer = TEAM_MEMBERS.find(m => m.id === 'g-gowtham');
-  const ashishEngineer = TEAM_MEMBERS.find(m => m.id === 'ashish');
-
   return (
     <section className="relative pt-28 pb-16 sm:pt-36 sm:pb-24 lg:pt-40 lg:pb-32 overflow-hidden bg-slate-950">
       

@@ -17,6 +17,7 @@ This repository is the full web application (a React + Vite + Tailwind + React R
 | `/calculator` | Solar system calculator |
 | `/team` | Engineering team + Head Engineer visiting card |
 | `/contact` | Contact details, booking and FAQ |
+| `/mail-delivery` | Mail Delivery Center — verify automatic e-mails, activate the relay, re-send the queue |
 
 Menu links open real pages (no fast in-page scrolling); each page opens at the top with a soft fade-in.
 Because these are real URLs the host must serve `index.html` for unknown paths — already configured for
@@ -43,8 +44,11 @@ Netlify (`netlify.toml`, `public/_redirects`) and Vercel (`vercel.json`). For a 
 
 ### 4. 📅 Online Booking Engine
 - Purpose (Home/Building), service type, preferred lead engineer, date (no past dates), time slot, contact & property details.
-- Submits to `contactgridmaster@gmail.com` via FormSubmit (no page redirect, no mail-app popup).
-- Honest status handling: the confirmation receipt shows whether delivery was confirmed, and if not, it offers direct call / WhatsApp fallbacks.
+- Delivered to `contactgridmaster@gmail.com` by a three-channel engine (own server relay → FormSubmit → Web3Forms) with a local retry queue.
+- Honest status handling: the receipt shows the answer of every relay, retries on demand, and offers
+  mail-app / WhatsApp / direct-call fallbacks carrying the full booking details.
+- Owner dashboard at `/mail-delivery`: live delivery test, one-time relay activation guidance, queued-message
+  management and delivery history.
 - Copy or download an official booking receipt (.txt) with the reference ID and equipment package.
 
 ### 5. 📐 Designing Samples & CAD Blueprint Viewer
@@ -72,7 +76,10 @@ Netlify (`netlify.toml`, `public/_redirects`) and Vercel (`vercel.json`). For a 
 - **Icons**: Lucide React
 - **QR**: qrcode.react
 - **Typography**: Inter & Fira Code (Google Fonts)
-- **Deployment**: Vercel / Netlify / Cloudflare Pages ready (`netlify.toml` included)
+- **E-mail delivery**: 3-channel engine (`src/lib/mailDelivery.js`) — own serverless relay → FormSubmit → Web3Forms, with a local retry queue
+- **Optional backend**: serverless function (`netlify/functions/send-booking.mjs` + `api/send-booking.js`) for Resend / SendGrid / Brevo
+- **Tests**: Node's built-in test runner (39 tests: engine unit tests, jsdom UI integration, serverless relay) + ESLint 9
+- **Deployment**: Vercel / Netlify / Cloudflare Pages ready (`netlify.toml`, `vercel.json` included)
 
 ---
 
@@ -87,14 +94,50 @@ npm run dev        # → http://localhost:3000
 npm run build      # production build in dist/
 ```
 
-### ⚠️ Important: Activate the booking email (one-time)
-Bookings are delivered through [FormSubmit](https://formsubmit.co). **Before the first real booking can arrive**, the owner of `contactgridmaster@gmail.com` must:
+### ✅ Verify the booking e-mail in one click
+Open **`/mail-delivery`** (also linked in the footer as *Mail Delivery Center*) on the deployed site and press
+**“Run live delivery test”**. The page sends a real test message through every relay and prints the exact
+answer of each one, so you can see immediately whether `contactgridmaster@gmail.com` is receiving bookings.
 
-1. Submit any booking from the live site (or trigger one from the local dev server).
-2. Open the inbox of `contactgridmaster@gmail.com` — FormSubmit will send an **activation email**.
-3. Click the **Activate** link in that email.
+Every booking is also stored in a local retry queue until a relay confirms delivery, so a message can never
+be lost — it is re-sent automatically on the visitor's next visit, when the connection returns, and from the
+delivery centre itself.
 
-After activation, every booking submission is emailed as a clean table. Until activation happens, the site still shows the customer a reference ID and offers call/WhatsApp fallbacks, but the email itself will not be delivered.
+### ⚠️ Important: Activate the booking e-mail (one-time, FormSubmit relay)
+FormSubmit — the free relay used out of the box — **silently discards every submission until the recipient
+inbox is activated**. This is the classic reason “automatic mails never arrive”. To activate:
+
+1. Open `/mail-delivery` on the live site and press **“Run live delivery test”** (or submit any booking).
+2. Open `contactgridmaster@gmail.com` — FormSubmit has just sent an e-mail with an **Activate Form** link
+   (check the **Spam** and **Promotions** folders and mark it “not spam”).
+3. Click that **Activate Form** link.
+4. Press **“Run live delivery test”** again — every relay turns green and anything queued is re-sent.
+
+The website now shows the customer an honest state instead of a fake success: *“Booking E-mail Delivered!”*,
+*“Booking Saved — Activation Pending”* or *“Booking Saved — Delivery Unconfirmed”*, and it always offers a
+one-click mail-app / WhatsApp / phone fallback that carries the full booking details.
+
+### 🚀 Optional: send from your own domain (no third-party activation needed)
+Deploy the included serverless endpoint with a provider API key and messages are sent from your own domain
+instead — this is the most reliable option and needs no activation click:
+
+| Netlify (Site settings → Environment variables) / Vercel (Project → Environment variables) | Example |
+| --- | --- |
+| `MAIL_PROVIDER` | `resend` \| `sendgrid` \| `brevo` |
+| `MAIL_API_KEY` | `re_xxxxxxxx` (provider API key) |
+| `MAIL_FROM` | `Grid Master Bookings <bookings@yourdomain.com>` *(verify the domain with the provider)* |
+| `MAIL_TO` | `contactgridmaster@gmail.com` *(default — no need to set)* |
+| `MAIL_CC` | `engineer@yourdomain.com,office@yourdomain.com` *(optional)* |
+
+When the endpoint is not configured it answers `501 { configured: false }` and the browser transparently falls
+back to FormSubmit, so nothing breaks either way. See `.env.example` for the build-time (`VITE_*`) options.
+
+### 🧪 Verify everything locally
+```bash
+npm run lint      # ESLint 9 (0 errors)
+npm test          # 39 tests: engine unit + jsdom UI integration + serverless relay
+npm run verify    # lint + tests + production build
+```
 
 ---
 
@@ -131,13 +174,23 @@ Grid-Master-Web-site-/
 ├── vite.config.js
 ├── tailwind.config.js
 ├── postcss.config.js
-├── netlify.toml                    # Netlify build & deploy config
+├── netlify.toml                    # Netlify build, functions & redirects
+├── vercel.json                     # Vercel build, functions & SPA rewrite
+├── eslint.config.js                # ESLint 9 flat config
+├── .env.example                    # Optional mail-provider / build variables
 ├── run.bat                         # Windows one-click launcher
+├── netlify/functions/              # Serverless mail endpoint (Netlify)
+├── api/                            # Serverless mail endpoint (Vercel)
+├── server/
+│   └── mailProvider.mjs            # Resend / SendGrid / Brevo sender
+├── tests/                          # 39 automated tests (engine, UI, relay)
 ├── public/
 └── src/
     ├── main.jsx
     ├── App.jsx                     # Section composition + shared booking/quote state
     ├── index.css                   # Tailwind + flip-card 3D + utilities
+    ├── lib/
+    │   └── mailDelivery.js         # Booking e-mail engine + retry queue
     ├── data/
     │   └── solarData.js            # Currency, assumptions, team, catalog, samples, FAQs
     └── components/
@@ -149,10 +202,13 @@ Grid-Master-Web-site-/
         ├── EquipmentCatalog.jsx    # Store, search/filter, quote builder w/ quantities
         ├── SolarCalculator.jsx     # Sizing & ROI engine (roof-aware)
         ├── Team.jsx                # Engineering roster
-        ├── BookingModal.jsx        # Booking form + FormSubmit dispatch + receipt
+        ├── BookingModal.jsx        # Booking form + mail engine dispatch + receipt
         ├── Testimonials.jsx        # Reviews & FAQ accordion
         ├── Footer.jsx              # Footer links & contact
         └── WhatsAppButton.jsx      # Floating WhatsApp contact button
+    └── pages/
+        ├── HomePage.jsx … NotFoundPage.jsx   # One page per menu entry
+        └── MailDeliveryPage.jsx    # Owner mail-delivery centre (/mail-delivery)
 ```
 
 ---

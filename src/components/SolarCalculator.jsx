@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { 
-  Calculator, Sun, Zap, DollarSign, Calendar, Clock, 
-  CheckCircle2, ArrowRight, ShieldCheck, Home, Building2, Battery, Award, Info
+  Calendar, ArrowRight, ShieldCheck, Home, Building2, Battery, Info
 } from 'lucide-react';
 import { CURRENCY, SOLAR_ASSUMPTIONS } from '../data/solarData';
 

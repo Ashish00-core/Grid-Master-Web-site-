@@ -1,7 +1,6 @@
 import React from 'react';
 import { 
-  Users, Award, Sparkles, ShieldCheck, Mail, Phone, 
-  CreditCard, CheckCircle2, Cpu, Wrench, ChevronRight 
+  Award, Sparkles, Mail, Phone, CreditCard, CheckCircle2, ChevronRight 
 } from 'lucide-react';
 import { TEAM_MEMBERS } from '../data/solarData';
 

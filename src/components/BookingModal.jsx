@@ -1,9 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  X, Calendar, Clock, CheckCircle2, User, Phone, Mail,
-  MapPin, Home, Building2, Sun, ShieldCheck, Send, Download, Copy, Check, Loader2, FileText, AlertTriangle, MessageCircle
+  X, CheckCircle2, Phone, Mail,
+  Home, Building2, Send, Download, Copy, Check, Loader2, FileText, AlertTriangle, MessageCircle, RefreshCw, ExternalLink, ServerCog
 } from 'lucide-react';
 import { COMPANY_INFO, CURRENCY } from '../data/solarData';
+import {
+  buildBookingMessage,
+  deliverMessage,
+  mailtoHref,
+  whatsappHref,
+  callHref,
+  resolveRecipient,
+  isValidEmail,
+  DELIVERY_STATES,
+} from '../lib/mailDelivery';
 
 const STANDARD_SERVICES = [
   "Solar Designing & 3D Simulation",
@@ -25,25 +35,36 @@ const TIME_SLOTS = [
   "04:00 PM - 06:00 PM",
 ];
 
-const toISODate = (d) => d.toISOString().split("T")[0];
+/** Local (not UTC) YYYY-MM-DD — avoids the date jumping a day in IST. */
+const toLocalISODate = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
-const getMinDate = () => toISODate(new Date());
+const getMinDate = () => toLocalISODate(new Date());
 const getDefaultDate = () => {
-  const d = new Date();
-  d.setDate(d.getDate() + 3);
-  return toISODate(d);
+  const date = new Date();
+  date.setDate(date.getDate() + 3);
+  return toLocalISODate(date);
 };
 const getMaxDate = () => {
-  const d = new Date();
-  d.setDate(d.getDate() + 90);
-  return toISODate(d);
+  const date = new Date();
+  date.setDate(date.getDate() + 90);
+  return toLocalISODate(date);
+};
+
+const formatDate = (isoDate) => {
+  if (!isoDate) return '-';
+  const parsed = new Date(`${isoDate}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return isoDate;
+  return parsed.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
 export default function BookingModal({ isOpen, onClose, initialService = "", quoteItems = [] }) {
-  const [purpose, setPurpose] = useState("home"); // 'home' or 'building'
-  const [serviceType, setServiceType] = useState(
-    initialService || STANDARD_SERVICES[0]
-  );
+  const [purpose, setPurpose] = useState("home");
+  const [serviceType, setServiceType] = useState(initialService || STANDARD_SERVICES[0]);
   const [preferredEngineer, setPreferredEngineer] = useState("g-gowtham");
   const [date, setDate] = useState(getDefaultDate());
   const [timeSlot, setTimeSlot] = useState(TIME_SLOTS[0]);
@@ -54,23 +75,21 @@ export default function BookingModal({ isOpen, onClose, initialService = "", quo
   const [notes, setNotes] = useState("");
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isRetrying, setIsRetrying] = useState(false);
+  const [formError, setFormError] = useState("");
   const [bookingConfirmed, setBookingConfirmed] = useState(false);
   const [bookingRef, setBookingRef] = useState("");
-  const [dispatchStatus, setDispatchStatus] = useState("sent"); // 'sent' | 'unconfirmed'
+  const [bookingPayload, setBookingPayload] = useState(null);
+  const [delivery, setDelivery] = useState(null);
   const [copied, setCopied] = useState(false);
 
-  // Keep the pre-filled service in sync every time the modal (re)opens
-  useEffect(() => {
-    if (isOpen) {
-      setServiceType(initialService || STANDARD_SERVICES[0]);
-    }
-  }, [isOpen, initialService]);
+  const recipient = resolveRecipient();
 
   // Lock page scroll + close on Escape while the modal is open
   useEffect(() => {
     if (!isOpen) return undefined;
-    const onKey = (e) => {
-      if (e.key === "Escape") onClose();
+    const onKey = (event) => {
+      if (event.key === "Escape") onClose();
     };
     document.addEventListener("keydown", onKey);
     const prevOverflow = document.body.style.overflow;
@@ -80,6 +99,64 @@ export default function BookingModal({ isOpen, onClose, initialService = "", quo
       document.body.style.overflow = prevOverflow;
     };
   }, [isOpen, onClose]);
+
+  const quoteTotalINR = useMemo(
+    () => quoteItems.reduce((sum, item) => sum + (item.priceINR || 0) * item.quantity, 0),
+    [quoteItems],
+  );
+  const quoteTotalUSD = useMemo(
+    () => quoteItems.reduce((sum, item) => sum + (item.pricePerUnit || 0) * item.quantity, 0),
+    [quoteItems],
+  );
+
+  const buildQuoteSummary = useCallback(
+    () =>
+      quoteItems
+        .map((item) => `  - ${item.name} x${item.quantity} (${CURRENCY.formatINR(item.priceINR)} / ${item.unit || "unit"})`)
+        .join("\n"),
+    [quoteItems],
+  );
+
+  const leadEngineerLabel = useMemo(() => {
+    const engineer = ENGINEER_OPTIONS.find((option) => option.value === preferredEngineer);
+    return engineer ? engineer.label : ENGINEER_OPTIONS[0].label;
+  }, [preferredEngineer]);
+
+  /** Everything the e-mail relay needs, in one immutable object. */
+  const buildBooking = useCallback(
+    (reference) => ({
+      reference,
+      createdAt: new Date().toISOString(),
+      name: customerName.trim(),
+      phone: customerPhone.trim(),
+      email: customerEmail.trim(),
+      location: propertyAddress.trim(),
+      purpose: purpose === "home" ? "Home (Residential)" : "Building (Commercial)",
+      service: serviceType,
+      engineer: leadEngineerLabel,
+      date,
+      timeSlot,
+      notes: notes.trim(),
+      quoteItems: quoteItems.map((item) => ({
+        name: item.name,
+        quantity: item.quantity,
+        lineTotalINR: CURRENCY.formatINR(item.priceINR * item.quantity),
+        lineTotalUSD: CURRENCY.formatUSD((item.pricePerUnit || 0) * item.quantity),
+      })),
+      quoteTotalINR: quoteItems.length ? CURRENCY.formatINR(quoteTotalINR) : "",
+      quoteTotalUSD: quoteItems.length ? CURRENCY.formatUSD(quoteTotalUSD) : "",
+    }),
+    [
+      customerName, customerPhone, customerEmail, propertyAddress, purpose,
+      serviceType, leadEngineerLabel, date, timeSlot, notes, quoteItems,
+      quoteTotalINR, quoteTotalUSD,
+    ],
+  );
+
+  const message = useMemo(
+    () => (bookingPayload ? buildBookingMessage(bookingPayload) : null),
+    [bookingPayload],
+  );
 
   const handleReset = () => {
     setBookingConfirmed(false);
@@ -91,10 +168,13 @@ export default function BookingModal({ isOpen, onClose, initialService = "", quo
     setDate(getDefaultDate());
     setTimeSlot(TIME_SLOTS[0]);
     setCopied(false);
+    setDelivery(null);
+    setBookingPayload(null);
+    setFormError("");
     onClose();
   };
 
-  const handleCopy = (text, key = "copied") => {
+  const handleCopy = (text) => {
     const done = () => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
@@ -102,130 +182,103 @@ export default function BookingModal({ isOpen, onClose, initialService = "", quo
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).then(done).catch(done);
     } else {
-      // Fallback for non-secure contexts
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      document.body.appendChild(ta);
-      ta.select();
+      const helper = document.createElement("textarea");
+      helper.value = text;
+      document.body.appendChild(helper);
+      helper.select();
       try { document.execCommand("copy"); } catch { /* noop */ }
-      document.body.removeChild(ta);
+      document.body.removeChild(helper);
       done();
     }
   };
 
-  const buildQuoteSummary = () =>
-    quoteItems
-      .map(
-        (item) =>
-          `  - ${item.name} x${item.quantity} (${CURRENCY.formatINR(item.priceINR)} / ${item.unit || "unit"})`
-      )
-      .join("\n");
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setFormError("");
 
-  const quoteTotalINR = quoteItems.reduce(
-    (sum, item) => sum + (item.priceINR || 0) * item.quantity,
-    0
-  );
-  const quoteTotalUSD = quoteItems.reduce(
-    (sum, item) => sum + (item.pricePerUnit || 0) * item.quantity,
-    0
-  );
+    if (!isValidEmail(customerEmail)) {
+      setFormError("Please enter a valid e-mail address so we can confirm your booking.");
+      return;
+    }
+    if (customerPhone.replace(/\D/g, "").length < 10) {
+      setFormError("Please enter a valid phone number (at least 10 digits).");
+      return;
+    }
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
     setIsSubmitting(true);
+    const reference = "GM-SR-" + Math.floor(100000 + Math.random() * 900000);
+    const booking = buildBooking(reference);
+    const built = buildBookingMessage(booking);
 
-    const randomRef = "GM-SR-" + Math.floor(100000 + Math.random() * 900000);
-    setBookingRef(randomRef);
+    setBookingRef(reference);
+    setBookingPayload(booking);
 
-    const targetEmail = COMPANY_INFO.email;
-    const leadEngineerName =
-      ENGINEER_OPTIONS.find((eng) => eng.value === preferredEngineer)?.label ||
-      ENGINEER_OPTIONS[0].label;
+    const report = await deliverMessage(built, {
+      reference,
+      kind: "booking",
+      replyTo: booking.email,
+    });
 
-    const bookingPayload = {
-      _subject: `New Solar Integration Booking [${randomRef}] - ${customerName}`,
-      _template: "table",
-      _replyto: customerEmail,
-      customer_name: customerName,
-      customer_phone: customerPhone,
-      property_location: propertyAddress,
-      purpose: purpose === "home" ? "Home (Residential)" : "Building (Commercial)",
-      service_required: serviceType,
-      lead_engineer: leadEngineerName,
-      scheduled_date: date,
-      time_slot: timeSlot,
-      notes: notes || "None provided",
-    };
-
-    if (quoteItems.length > 0) {
-      bookingPayload.selected_equipment = buildQuoteSummary();
-      bookingPayload.equipment_package_total = `${CURRENCY.formatINR(quoteTotalINR)} (≈ ${CURRENCY.formatUSD(quoteTotalUSD)})`;
-    }
-
-    let status = "sent";
-    try {
-      const res = await fetch("https://formsubmit.co/ajax/" + targetEmail, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify(bookingPayload),
-      });
-      const data = await res.json().catch(() => ({}));
-      const ok = res.ok && (data.success === true || data.success === "true");
-      status = ok ? "sent" : "unconfirmed";
-    } catch {
-      status = "unconfirmed";
-    }
-
-    // Brief loading state for a smooth UX
-    await new Promise((resolve) => setTimeout(resolve, 900));
+    setDelivery(report);
     setIsSubmitting(false);
-    setDispatchStatus(status);
     setBookingConfirmed(true);
   };
 
-  const leadEngineerLabel = () =>
-    ENGINEER_OPTIONS.find((eng) => eng.value === preferredEngineer)?.label ||
-    ENGINEER_OPTIONS[0].label;
+  const handleRetry = async () => {
+    if (!message) return;
+    setIsRetrying(true);
+    const report = await deliverMessage(message, {
+      reference: bookingRef,
+      kind: "booking",
+      replyTo: bookingPayload?.email,
+    });
+    setDelivery(report);
+    setIsRetrying(false);
+  };
 
   const handleCopyReceipt = () => {
-    const quoteLines =
-      quoteItems.length > 0
-        ? `\nSELECTED EQUIPMENT:\n${buildQuoteSummary()}\nEquipment package total: ${CURRENCY.formatINR(quoteTotalINR)} (≈ ${CURRENCY.formatUSD(quoteTotalUSD)})`
-        : "";
+    if (!message) return;
     const statusLine =
-      dispatchStatus === "sent"
-        ? "Dispatched To: " + targetEmail
-        : "Needs confirmation - please call us to confirm your slot";
+      delivery?.state === DELIVERY_STATES.delivered
+        ? `Dispatched To: ${delivery.recipient} (${delivery.channelLabel})`
+        : delivery?.state === DELIVERY_STATES.activation
+          ? "Queued — one-time FormSubmit activation pending; will be re-sent automatically"
+          : "Queued on this device — retry from the booking form or send it from your mail app";
     const text = `GRID MASTER SOLAR BOOKING RECEIPT
 ========================================
 Reference ID: ${bookingRef}
-Customer Name: ${customerName}
-Phone: ${customerPhone}
-Email: ${customerEmail}
-Location: ${propertyAddress}
+Customer Name: ${bookingPayload?.name || ''}
+Phone: ${bookingPayload?.phone || ''}
+Email: ${bookingPayload?.email || ''}
+Location: ${bookingPayload?.location || ''}
 
 PROJECT SUMMARY:
-- Scope: ${purpose === "home" ? "Home (Residential)" : "Building (Commercial)"}
-- Service: ${serviceType}
-- Preferred Audit Date: ${date} at ${timeSlot}
-- Oversight: GANDHAMANENI GOUTHAM (Head Engineer)
-${quoteLines}
-- Status: ${statusLine}
+- Scope: ${bookingPayload?.purpose || ''}
+- Service: ${bookingPayload?.service || ''}
+- Preferred Audit Date: ${bookingPayload?.date || ''} at ${bookingPayload?.timeSlot || ''}
+- Oversight: ${bookingPayload?.engineer || ''}
+${quoteItems.length ? `\nSELECTED EQUIPMENT:\n${buildQuoteSummary()}\nEquipment package total: ${bookingPayload?.quoteTotalINR} (≈ ${bookingPayload?.quoteTotalUSD})` : ""}
+- Delivery Status: ${statusLine}
 ========================================
 For assistance, contact Head Engineer G. Goutham at ${COMPANY_INFO.directPhone}.`;
     handleCopy(text);
   };
 
   const handleDownloadReceipt = () => {
-    const quoteLines =
-      quoteItems.length > 0
-        ? `\nSELECTED EQUIPMENT PACKAGE:\n${quoteItems
-            .map((item) => `${item.name} x${item.quantity} = ${CURRENCY.formatINR(item.priceINR * item.quantity)}`)
-            .join("\n")}\nPackage Subtotal    : ${CURRENCY.formatINR(quoteTotalINR)} (≈ ${CURRENCY.formatUSD(quoteTotalUSD)})`
-        : "";
+    const quoteLines = quoteItems.length
+      ? `\nSELECTED EQUIPMENT PACKAGE:\n${quoteItems
+          .map((item) => `${item.name} x${item.quantity} = ${CURRENCY.formatINR(item.priceINR * item.quantity)}`)
+          .join("\n")}\nPackage Subtotal    : ${CURRENCY.formatINR(quoteTotalINR)} (≈ ${CURRENCY.formatUSD(quoteTotalUSD)})`
+      : "";
+
+    const statusText = delivery
+      ? delivery.state === DELIVERY_STATES.delivered
+        ? `DELIVERED TO ${delivery.recipient} VIA ${String(delivery.channelLabel).toUpperCase()}`
+        : delivery.state === DELIVERY_STATES.activation
+          ? `QUEUED — FORM-SUBMIT ACTIVATION PENDING FOR ${delivery.recipient}`
+          : `QUEUED ON THIS DEVICE — DELIVERY COULD NOT BE CONFIRMED (${delivery.detail})`
+      : "NOT SENT";
+
     const receiptText = `=====================================================
             GRID MASTER SOLAR SYSTEMS
      ADVANCED SOLAR DESIGNING & GRID INTEGRATION
@@ -234,36 +287,34 @@ For assistance, contact Head Engineer G. Goutham at ${COMPANY_INFO.directPhone}.
 OFFICIAL BOOKING RECEIPT
 -----------------------------------------------------
 Booking Reference : ${bookingRef}
-Date Created      : ${new Date().toLocaleDateString()}
+Date Created      : ${new Date().toLocaleString('en-IN')}
 
 CUSTOMER DETAILS:
 -----------------------------------------------------
-Full Name         : ${customerName}
-Phone Number      : ${customerPhone}
-Email Address     : ${customerEmail}
-Site Address      : ${propertyAddress}
+Full Name         : ${bookingPayload?.name || ''}
+Phone Number      : ${bookingPayload?.phone || ''}
+Email Address     : ${bookingPayload?.email || ''}
+Site Address      : ${bookingPayload?.location || ''}
 
 PROJECT SPECIFICATIONS:
 -----------------------------------------------------
-Installation Purpose: ${purpose === "home" ? "Home (Residential)" : "Building (Commercial)"}
-Required Service    : ${serviceType}
-Scheduled Audit Date: ${date}
-Time Slot           : ${timeSlot}
-Lead Engineer       : ${leadEngineerLabel()}
-Special Notes       : ${notes || "N/A"}
+Installation Purpose: ${bookingPayload?.purpose || ''}
+Required Service    : ${bookingPayload?.service || ''}
+Scheduled Audit Date: ${bookingPayload?.date || ''}
+Time Slot           : ${bookingPayload?.timeSlot || ''}
+Lead Engineer       : ${bookingPayload?.engineer || ''}
+Special Notes       : ${bookingPayload?.notes || "N/A"}
 ${quoteLines}
 ENGINEERING DIRECTORY:
 -----------------------------------------------------
 Head Engineer : GANDHAMANENI GOUTHAM
 Direct Phone  : ${COMPANY_INFO.directPhone}
-Company Email : ${COMPANY_INFO.email}
+Company Email : ${recipient}
 Solar Designer: Ashish Kumar
 
-Status: ${
-  dispatchStatus === "sent"
-    ? `DISPATCHED TO ${targetEmail}`
-    : "PENDING CONFIRMATION - PLEASE CALL TO CONFIRM YOUR SLOT"
-}
+DELIVERY STATUS:
+-----------------------------------------------------
+${statusText}
 =====================================================`;
 
     const blob = new Blob([receiptText], { type: "text/plain;charset=utf-8;" });
@@ -283,6 +334,13 @@ Status: ${
     ? STANDARD_SERVICES
     : [serviceType, ...STANDARD_SERVICES];
 
+  const delivered = delivery?.state === DELIVERY_STATES.delivered;
+  const needsAttention = Boolean(delivery) && !delivered;
+  const mailFallback = message ? mailtoHref(message, { includeCustomer: true, customerEmail }) : `mailto:${recipient}`;
+  const whatsappFallback = message
+    ? whatsappHref(`${message.subject}\n\n${message.text}`)
+    : whatsappHref('Hi Grid Master, I just submitted a booking on your website.');
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md theme-backdrop animate-in fade-in duration-200"
@@ -295,7 +353,6 @@ Status: ${
     >
       <div className="relative w-full max-w-2xl bg-slate-900 border border-amber-500/40 rounded-3xl p-6 sm:p-8 max-h-[90vh] overflow-y-auto shadow-2xl">
 
-        {/* Close Button */}
         <button
           onClick={onClose}
           className="absolute top-4 right-4 p-2.5 rounded-full bg-slate-800 text-slate-400 hover:text-white transition-colors"
@@ -306,7 +363,6 @@ Status: ${
 
         {!bookingConfirmed ? (
           <div>
-            {/* Modal Header */}
             <div className="flex items-center gap-2 mb-2">
               <span className="px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-bold uppercase tracking-wider">
                 Grid Master Online Booking Hub
@@ -319,7 +375,7 @@ Status: ${
             <p className="text-xs sm:text-sm text-slate-300 mt-1">
               Schedule an engineering site inspection and 3D solar layout consultation with{" "}
               <strong className="text-amber-400">Head Engineer GANDHAMANENI GOUTHAM</strong>. Your
-              request is sent to <strong className="text-amber-300">{COMPANY_INFO.email}</strong>{" "}
+              request is e-mailed to <strong className="text-amber-300">{recipient}</strong>{" "}
               and our team calls you back within 24 hours.
             </p>
 
@@ -395,9 +451,9 @@ Status: ${
                     onChange={(e) => setServiceType(e.target.value)}
                     className="w-full py-2.5 px-3 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-xs font-medium focus:border-amber-500 focus:outline-none"
                   >
-                    {serviceOptions.map((opt) => (
-                      <option key={opt} value={opt}>
-                        {opt.length > 60 ? opt + "…" : opt}
+                    {serviceOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option.length > 60 ? option + "…" : option}
                       </option>
                     ))}
                   </select>
@@ -412,9 +468,9 @@ Status: ${
                     onChange={(e) => setPreferredEngineer(e.target.value)}
                     className="w-full py-2.5 px-3 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-xs font-medium focus:border-amber-500 focus:outline-none"
                   >
-                    {ENGINEER_OPTIONS.map((eng) => (
-                      <option key={eng.value} value={eng.value}>
-                        {eng.label}
+                    {ENGINEER_OPTIONS.map((engineer) => (
+                      <option key={engineer.value} value={engineer.value}>
+                        {engineer.label}
                       </option>
                     ))}
                   </select>
@@ -436,6 +492,7 @@ Status: ${
                     onChange={(e) => setDate(e.target.value)}
                     className="w-full py-2.5 px-3 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-xs font-medium focus:border-amber-500 focus:outline-none"
                   />
+                  <p className="text-[10px] text-slate-500 mt-1">Selected: {formatDate(date)}</p>
                 </div>
 
                 <div>
@@ -495,6 +552,9 @@ Status: ${
                   onChange={(e) => setCustomerEmail(e.target.value)}
                   className="w-full py-2.5 px-3.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-xs focus:border-amber-500 focus:outline-none"
                 />
+                <p className="text-[10px] text-slate-500 -mt-1.5">
+                  We reply straight to this address, so please double-check it.
+                </p>
 
                 <input
                   type="text"
@@ -514,6 +574,13 @@ Status: ${
                   className="w-full py-2.5 px-3.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-xs focus:border-amber-500 focus:outline-none"
                 ></textarea>
               </div>
+
+              {formError && (
+                <p className="flex items-start gap-2 text-xs font-semibold text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-xl p-3">
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <span>{formError}</span>
+                </p>
+              )}
 
               {/* What happens next */}
               <div className="grid grid-cols-3 gap-2 text-center text-[10px] sm:text-[11px]">
@@ -540,7 +607,7 @@ Status: ${
                 {isSubmitting ? (
                   <>
                     <Loader2 className="w-5 h-5 animate-spin text-slate-950" />
-                    <span>Sending your booking securely...</span>
+                    <span>E-mailing your booking to {recipient}…</span>
                   </>
                 ) : (
                   <>
@@ -550,6 +617,10 @@ Status: ${
                 )}
               </button>
 
+              <p className="text-[10px] text-slate-500 text-center">
+                Delivered through our own mail server when available, with an automatic backup relay.
+              </p>
+
             </form>
           </div>
         ) : (
@@ -557,16 +628,12 @@ Status: ${
           <div className="text-center py-6 space-y-6 animate-in zoom-in-95 duration-300">
             <div
               className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto shadow-xl ${
-                dispatchStatus === "sent"
+                delivered
                   ? "bg-emerald-500/20 border-2 border-emerald-400 text-emerald-400 shadow-emerald-500/20"
                   : "bg-amber-500/20 border-2 border-amber-400 text-amber-400 shadow-amber-500/20"
               }`}
             >
-              {dispatchStatus === "sent" ? (
-                <CheckCircle2 className="w-12 h-12" />
-              ) : (
-                <AlertTriangle className="w-12 h-12" />
-              )}
+              {delivered ? <CheckCircle2 className="w-12 h-12" /> : <AlertTriangle className="w-12 h-12" />}
             </div>
 
             <div>
@@ -574,107 +641,164 @@ Status: ${
                 Booking Reference: {bookingRef}
               </span>
               <h2 className="text-2xl sm:text-3xl font-black text-white mt-3">
-                {dispatchStatus === "sent"
-                  ? "Solar Booking Submitted Successfully!"
-                  : "Booking Received — One Step Left"}
+                {delivered
+                  ? "Booking E-mail Delivered!"
+                  : delivery?.state === DELIVERY_STATES.activation
+                    ? "Booking Saved — Activation Pending"
+                    : "Booking Saved — Delivery Unconfirmed"}
               </h2>
               <p className="text-xs sm:text-sm text-slate-300 mt-2 max-w-md mx-auto leading-relaxed">
-                Thank you, <strong className="text-white">{customerName}</strong>.{" "}
-                {dispatchStatus === "sent" ? (
-                  <>
-                    Your request was sent to <strong className="text-amber-400">{COMPANY_INFO.email}</strong>.
-                  </>
-                ) : (
-                  <>
-                    We couldn&apos;t confirm automatic delivery of your details. Please reach us
-                    directly so we can lock in your slot.
-                  </>
-                )}
+                Thank you, <strong className="text-white">{bookingPayload?.name}</strong>.{" "}
+                {delivered
+                  ? `Your request reached ${delivery.recipient} through the ${delivery.channelLabel}.`
+                  : "Your details are safely stored and nothing is lost — use any option below to make sure we receive it right now."}
               </p>
             </div>
+
+            {/* Delivery diagnostics */}
+            {delivery && (
+              <div
+                className={`text-left max-w-lg mx-auto rounded-2xl border p-4 text-xs space-y-2 ${
+                  delivered
+                    ? "bg-emerald-500/10 border-emerald-500/30"
+                    : "bg-amber-500/10 border-amber-500/30"
+                }`}
+              >
+                <p className="font-bold text-white flex items-center gap-2">
+                  <ServerCog className="w-4 h-4 text-amber-400" />
+                  Automatic e-mail delivery report
+                </p>
+                {(delivery.attempts || []).map((attempt) => (
+                  <div key={attempt.channel} className="flex items-start gap-2 text-slate-300">
+                    {attempt.ok ? (
+                      <Check className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0 mt-0.5" />
+                    ) : attempt.skipped ? (
+                      <span className="text-slate-500 flex-shrink-0 mt-0.5">–</span>
+                    ) : (
+                      <X className="w-3.5 h-3.5 text-red-400 flex-shrink-0 mt-0.5" />
+                    )}
+                    <span>
+                      <strong className="text-white">{attempt.label}:</strong> {attempt.detail}
+                    </span>
+                  </div>
+                ))}
+                {needsAttention && (
+                  <p className="text-amber-200 pt-1 border-t border-amber-500/20">
+                    {delivery.state === DELIVERY_STATES.activation ? (
+                      <>
+                        <strong>One-time setup:</strong> open the inbox <strong>{delivery.recipient}</strong>{" "}
+                        (check spam too) and click <strong>“Activate Form”</strong> in the e-mail from
+                        FormSubmit. Everything queued here is re-sent automatically after that click — or
+                        press <em>Retry delivery</em> below.
+                      </>
+                    ) : (
+                      <>
+                        The relay could not be reached from this browser. Send the prepared e-mail
+                        yourself with the button below — it opens your mail app with every detail filled in.
+                      </>
+                    )}
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Receipt Details Box */}
             <div className="bg-slate-950 p-5 rounded-2xl border border-amber-500/30 font-mono text-xs text-slate-300 text-left space-y-2.5 max-w-lg mx-auto">
               <div className="flex justify-between border-b border-slate-800 pb-2">
-                <span className="text-slate-400">Booking Status:</span>
-                {dispatchStatus === "sent" ? (
+                <span className="text-slate-400">E-mail Status:</span>
+                {delivered ? (
                   <span className="text-emerald-400 font-bold flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Sent to {COMPANY_INFO.email}
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Sent to {delivery.recipient}
                   </span>
                 ) : (
                   <span className="text-amber-400 font-bold flex items-center gap-1">
-                    <AlertTriangle className="w-3.5 h-3.5" /> Call us to confirm
+                    <AlertTriangle className="w-3.5 h-3.5" /> Saved &amp; retrying
                   </span>
                 )}
               </div>
               <div className="flex justify-between border-b border-slate-800 pb-2">
                 <span className="text-slate-400">Service Required:</span>
-                <span className="text-amber-300 font-bold truncate max-w-[220px] text-right">{serviceType}</span>
+                <span className="text-amber-300 font-bold truncate max-w-[220px] text-right">{bookingPayload?.service}</span>
               </div>
               <div className="flex justify-between border-b border-slate-800 pb-2">
                 <span className="text-slate-400">Scope:</span>
-                <span className="text-white">{purpose === "home" ? "Home (Residential)" : "Building (Commercial)"}</span>
+                <span className="text-white">{bookingPayload?.purpose}</span>
               </div>
               <div className="flex justify-between border-b border-slate-800 pb-2">
                 <span className="text-slate-400">Scheduled Audit:</span>
-                <span className="text-emerald-400">{date} ({timeSlot})</span>
+                <span className="text-emerald-400">{bookingPayload?.date} ({bookingPayload?.timeSlot})</span>
               </div>
               <div className="flex justify-between border-b border-slate-800 pb-2">
                 <span className="text-slate-400">Lead Engineer:</span>
                 <span className="text-amber-400 font-bold truncate max-w-[220px] text-right">
-                  {leadEngineerLabel()}
+                  {bookingPayload?.engineer}
                 </span>
               </div>
               {quoteItems.length > 0 && (
                 <div className="flex justify-between border-b border-slate-800 pb-2">
                   <span className="text-slate-400">Equipment Package:</span>
-                  <span className="text-amber-300 font-bold">{quoteItems.length} items — total {CURRENCY.formatINR(quoteTotalINR)}</span>
+                  <span className="text-amber-300 font-bold">
+                    {quoteItems.length} items — total {CURRENCY.formatINR(quoteTotalINR)}
+                  </span>
                 </div>
               )}
               <div className="flex justify-between">
                 <span className="text-slate-400">Property Address:</span>
-                <span className="text-slate-200 truncate max-w-[220px] text-right">{propertyAddress}</span>
+                <span className="text-slate-200 truncate max-w-[220px] text-right">{bookingPayload?.location}</span>
               </div>
             </div>
 
             <p className="text-xs text-slate-400 max-w-md mx-auto">
-              Our team will call you at <strong className="text-white">{customerPhone}</strong>{" "}
+              Our team will call you at <strong className="text-white">{bookingPayload?.phone}</strong>{" "}
               within 24 hours to confirm your audit slot.
             </p>
 
-            {dispatchStatus !== "sent" && (
-              <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                <a
-                  href={`tel:${COMPANY_INFO.directPhone.replace(/\s/g, "")}`}
-                  className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition-all border border-slate-700"
+            {/* Actions — retry, guaranteed manual fallbacks, contact */}
+            <div className="flex flex-col sm:flex-row gap-3 justify-center flex-wrap">
+              {needsAttention && (
+                <button
+                  onClick={handleRetry}
+                  disabled={isRetrying}
+                  className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-amber-500 text-slate-950 font-black text-xs hover:bg-amber-400 transition-all disabled:opacity-70"
                 >
-                  <Phone className="w-4 h-4 text-amber-400" />
-                  <span>Call {COMPANY_INFO.phoneDisplay}</span>
-                </a>
-                <a
-                  href={`https://wa.me/917200745180?text=${encodeURIComponent(
-                    `Hi Grid Master, I just submitted a solar booking (Ref ${bookingRef}) for ${customerName}. Please confirm my slot: ${date} at ${timeSlot}.`
-                  )}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all"
-                >
-                  <MessageCircle className="w-4 h-4" />
-                  <span>WhatsApp Us</span>
-                </a>
-              </div>
-            )}
+                  {isRetrying ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                  <span>{isRetrying ? "Retrying…" : "Retry automatic delivery"}</span>
+                </button>
+              )}
+
+              <a
+                href={mailFallback}
+                className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition-all border border-slate-700"
+              >
+                <Mail className="w-4 h-4 text-amber-400" />
+                <span>Send it from my mail app now</span>
+              </a>
+
+              <a
+                href={whatsappFallback}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all"
+              >
+                <MessageCircle className="w-4 h-4" />
+                <span>Send on WhatsApp</span>
+              </a>
+
+              <a
+                href={callHref()}
+                className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition-all border border-slate-700"
+              >
+                <Phone className="w-4 h-4 text-amber-400" />
+                <span>Call {COMPANY_INFO.phoneDisplay}</span>
+              </a>
+            </div>
 
             <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
               <button
                 onClick={handleCopyReceipt}
                 className="px-5 py-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 font-bold text-xs hover:bg-amber-500/20 transition-all flex items-center justify-center gap-2"
               >
-                {copied ? (
-                  <Check className="w-4 h-4 text-emerald-400" />
-                ) : (
-                  <Copy className="w-4 h-4 text-amber-400" />
-                )}
+                {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-amber-400" />}
                 <span>{copied ? "Copied Receipt!" : "Copy Reference & Receipt"}</span>
               </button>
 
@@ -693,6 +817,15 @@ Status: ${
                 Done
               </button>
             </div>
+
+            {needsAttention && (
+              <p className="text-[11px] text-slate-500">
+                <a href="/mail-delivery" className="inline-flex items-center gap-1 text-amber-400 hover:underline">
+                  <ExternalLink className="w-3 h-3" />
+                  Owner? Open the Mail Delivery Center to finish the one-time e-mail setup.
+                </a>
+              </p>
+            )}
           </div>
         )}
       </div>

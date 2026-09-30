@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Sun, ShieldCheck, Phone, Mail, MapPin, Award,
-  Download, Copy, Check, RotateCw, Sparkles, Building2, Home, Cpu
+  Download, Copy, Check, RotateCw, Sparkles, Building2, Home
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { TEAM_MEMBERS, COMPANY_INFO } from '../data/solarData';

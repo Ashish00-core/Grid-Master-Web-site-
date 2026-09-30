@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   Home, Building2, DraftingCompass, Wrench, Zap, 
-  BatteryCharging, CheckCircle2, Shield, ArrowRight, Layers
+  BatteryCharging, CheckCircle2, ArrowRight
 } from 'lucide-react';
 import { SERVICES_LIST } from '../data/solarData';
 

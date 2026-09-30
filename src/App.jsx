@@ -10,10 +10,12 @@ import CalculatorPage from './pages/CalculatorPage';
 import TeamPage from './pages/TeamPage';
 import ContactPage from './pages/ContactPage';
 import NotFoundPage from './pages/NotFoundPage';
+import MailDeliveryPage from './pages/MailDeliveryPage';
 import VisitingCard from './components/VisitingCard';
 import Footer from './components/Footer';
 import BookingModal from './components/BookingModal';
 import WhatsAppButton from './components/WhatsAppButton';
+import { flushOutbox } from './lib/mailDelivery';
 
 export default function App() {
   const [theme, setTheme] = useState(() =>
@@ -38,6 +40,26 @@ export default function App() {
     const themeColor = document.querySelector('meta[name="theme-color"]');
     themeColor?.setAttribute('content', theme === 'light' ? '#f8fafc' : '#020617');
   }, [theme]);
+
+  // Safety net for the e-mail pipeline: anything the relay did not accept is
+  // queued locally and re-sent automatically — on the next visit, whenever the
+  // browser comes back online, and every few minutes while the site is open.
+  useEffect(() => {
+    const runFlush = () => {
+      flushOutbox().catch(() => {
+        /* offline or storage blocked — the message stays queued */
+      });
+    };
+
+    runFlush();
+    window.addEventListener('online', runFlush);
+    const interval = window.setInterval(runFlush, 5 * 60 * 1000);
+
+    return () => {
+      window.removeEventListener('online', runFlush);
+      window.clearInterval(interval);
+    };
+  }, []);
 
   const handleToggleTheme = () => {
     setTheme(currentTheme => currentTheme === 'dark' ? 'light' : 'dark');
@@ -118,6 +140,7 @@ export default function App() {
             <Route path="/calculator" element={<CalculatorPage onOpenBooking={handleOpenBooking} />} />
             <Route path="/team" element={<TeamPage onOpenVisitingCard={handleOpenVisitingCardModal} onOpenBooking={handleOpenBooking} />} />
             <Route path="/contact" element={<ContactPage onOpenBooking={handleOpenBooking} onOpenVisitingCard={handleOpenVisitingCardModal} />} />
+            <Route path="/mail-delivery" element={<MailDeliveryPage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </div>
@@ -129,13 +152,15 @@ export default function App() {
         onOpenVisitingCard={handleOpenVisitingCardModal}
       />
 
-      {/* Modal Dialogs */}
-      <BookingModal 
-        isOpen={isBookingOpen}
-        onClose={handleCloseBooking}
-        initialService={bookingService}
-        quoteItems={selectedEquipment}
-      />
+      {/* Modal Dialogs — mounted only while open so every visit starts clean */}
+      {isBookingOpen && (
+        <BookingModal
+          isOpen
+          onClose={handleCloseBooking}
+          initialService={bookingService}
+          quoteItems={selectedEquipment}
+        />
+      )}
 
       {isVisitingCardModalOpen && (
         <VisitingCard 

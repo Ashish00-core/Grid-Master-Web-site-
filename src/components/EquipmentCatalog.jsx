@@ -1,11 +1,16 @@
 import React, { useState } from 'react';
 import { 
-  ShoppingBag, Search, CheckCircle2, Plus, Minus,
-  Trash2, ChevronRight, X 
+  Search, CheckCircle2, Plus, Minus, Trash2, ChevronRight, X 
 } from 'lucide-react';
 import { EQUIPMENT_CATALOG, CURRENCY } from '../data/solarData';
 
-export default function EquipmentCatalog({ onAddToQuote, onUpdateQuantity, selectedEquipment = [], onOpenBooking }) {
+export default function EquipmentCatalog({
+  onAddToQuote,
+  onUpdateQuantity,
+  onClearQuote,
+  selectedEquipment = [],
+  onOpenBooking,
+}) {
   const [activeCategory, setActiveCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -205,7 +210,8 @@ export default function EquipmentCatalog({ onAddToQuote, onUpdateQuantity, selec
                     </div>
                   </div>
                   <button
-                    onClick={onClearQuote}
+                    type="button"
+                    onClick={() => onClearQuote?.()}
                     className="flex items-center gap-1 text-[11px] font-semibold text-slate-400 hover:text-red-400 transition-colors"
                     title="Remove all selected equipment"
                   >

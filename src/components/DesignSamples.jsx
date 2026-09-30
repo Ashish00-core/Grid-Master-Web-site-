@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  FileSpreadsheet, Sparkles, CheckCircle2, Eye, ShieldCheck, 
-  Home, Building2, Sun, Zap, Cpu, Award, Download, ArrowRight, X, Copy
+  CheckCircle2, Eye, ShieldCheck, Home, Building2, ArrowRight, X, Copy
 } from 'lucide-react';
 import { CAD_DESIGN_SAMPLES } from '../data/solarData';
 

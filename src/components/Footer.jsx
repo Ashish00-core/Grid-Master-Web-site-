@@ -1,11 +1,9 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Sun, Phone, Mail, MapPin, Award, ShieldCheck, Heart, CreditCard } from 'lucide-react';
-import { COMPANY_INFO, TEAM_MEMBERS } from '../data/solarData';
+import { Sun, Phone, Mail, MapPin, ShieldCheck, CreditCard } from 'lucide-react';
+import { COMPANY_INFO } from '../data/solarData';
 
 export default function Footer({ onOpenBooking, onOpenVisitingCard }) {
-  const headEngineer = TEAM_MEMBERS.find(m => m.id === 'g-gowtham') || TEAM_MEMBERS[0];
-
   return (
     <footer className="bg-slate-950 border-t border-amber-500/20 pt-16 pb-12 relative overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
@@ -112,10 +110,19 @@ export default function Footer({ onOpenBooking, onOpenVisitingCard }) {
           <p>
             © {new Date().getFullYear()} Grid Master Solar Systems. All rights reserved.
           </p>
-          <div className="flex items-center gap-4 text-[11px]">
+          <div className="flex flex-wrap items-center gap-4 text-[11px]">
             <span>Head Engineer: <strong className="text-amber-400">GANDHAMANENI GOUTHAM</strong></span>
             <span>•</span>
             <span>Solar Designer: <strong className="text-slate-300">Ashish Kumar</strong></span>
+            <span>•</span>
+            <Link
+              to="/mail-delivery"
+              className="inline-flex items-center gap-1 text-slate-400 hover:text-amber-400 transition-colors"
+              title="Verify that automatic booking e-mails are being delivered"
+            >
+              <Mail className="w-3 h-3" />
+              Mail Delivery Center
+            </Link>
           </div>
         </div>
 
