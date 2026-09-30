@@ -43,9 +43,14 @@ Netlify (`netlify.toml`, `public/_redirects`) and Vercel (`vercel.json`). For a 
 
 ### 4. 📅 Online Booking Engine
 - Purpose (Home/Building), service type, preferred lead engineer, date (no past dates), time slot, contact & property details.
-- Submits to `contactgridmaster@gmail.com` via FormSubmit (no page redirect, no mail-app popup).
-- Honest status handling: the confirmation receipt shows whether delivery was confirmed, and if not, it offers direct call / WhatsApp fallbacks.
+- Delivers to `contactgridmaster@gmail.com` through relays tried in order — the site's own mail relay first, then FormSubmit — so a single blocked or un-activated relay cannot lose a booking.
+- **Honest status handling**: the confirmation screen only says "submitted successfully" when a relay confirmed it; otherwise it says the booking is saved and offers one-click retry, a pre-filled e-mail, WhatsApp and phone.
+- A booking that could not be sent is stored on the device and re-sent automatically later (next visit / back online).
 - Copy or download an official booking receipt (.txt) with the reference ID and equipment package.
+
+> **Booking e-mails are not arriving?** See [`docs/booking-email-setup.md`](docs/booking-email-setup.md) —
+> it explains the one-time FormSubmit activation, the permanent own-provider setup
+> (`.env.example`), and how to recover bookings FormSubmit received but never delivered.
 
 ### 5. 📐 Designing Samples & CAD Blueprint Viewer
 - Residential and commercial case-study portfolio with filters.
@@ -132,14 +137,26 @@ Grid-Master-Web-site-/
 ├── tailwind.config.js
 ├── postcss.config.js
 ├── netlify.toml                    # Netlify build & deploy config
+├── vercel.json                     # Vercel rewrites (SPA routes)
+├── .env.example                    # Optional mail-provider keys for the booking relay
 ├── run.bat                         # Windows one-click launcher
 ├── public/
+├── docs/
+│   └── booking-email-setup.md      # Why bookings were not e-mailed + how to finish setup
+├── server/
+│   ├── mailProvider.mjs            # Resend / Brevo / SendGrid / Web3Forms / webhook sender
+│   └── handleBooking.mjs           # Shared request handler + validation + throttling
+├── api/booking.js                  # Vercel function  → POST /api/booking
+├── netlify/functions/booking.mjs   # Netlify function → /.netlify/functions/booking
+├── tests/                          # node:test suites (engine, server relay, jsdom flows)
 └── src/
     ├── main.jsx
     ├── App.jsx                     # Section composition + shared booking/quote state
     ├── index.css                   # Tailwind + flip-card 3D + utilities
     ├── data/
     │   └── solarData.js            # Currency, assumptions, team, catalog, samples, FAQs
+    ├── lib/
+    │   └── bookingMail.js          # Booking delivery engine (relay ladder, honest states, retry queue)
     └── components/
         ├── Navbar.jsx              # Sticky header nav + quick actions
         ├── Hero.jsx                # Hero banner with primary CTAs
@@ -149,7 +166,7 @@ Grid-Master-Web-site-/
         ├── EquipmentCatalog.jsx    # Store, search/filter, quote builder w/ quantities
         ├── SolarCalculator.jsx     # Sizing & ROI engine (roof-aware)
         ├── Team.jsx                # Engineering roster
-        ├── BookingModal.jsx        # Booking form + FormSubmit dispatch + receipt
+        ├── BookingModal.jsx        # Booking form + delivery status + receipt + fallbacks
         ├── Testimonials.jsx        # Reviews & FAQ accordion
         ├── Footer.jsx              # Footer links & contact
         └── WhatsAppButton.jsx      # Floating WhatsApp contact button
@@ -167,6 +184,27 @@ Grid-Master-Web-site-/
 - **Headquarters**: Solar Tech Park, Suite 402, Clean Energy Corridor, Hyderabad
 
 > Note: `contactgridmaster@gmail.com` is the booking receipt inbox configured in `COMPANY_INFO` — update it in `src/data/solarData.js` if you move to a company domain.
+> Changing it also invalidates the FormSubmit activation for the old address, so re-run the
+> one-time activation in [`docs/booking-email-setup.md`](docs/booking-email-setup.md), or set
+> `MAIL_TO` to the new inbox with a mail provider configured.
+
+---
+
+## 🧪 Tests
+
+```bash
+npm test        # 47 tests: delivery engine, server relay, jsdom booking flows
+npm run verify  # tests + production build
+```
+
+- `tests/bookingMail.test.mjs` — relay order, multipart-before-JSON transport, FormSubmit's
+  activation/error answers, retry queue behaviour.
+- `tests/serverRelay.test.mjs` — provider detection, mail rendering/escaping, handler
+  validation, throttling, 501 fallback.
+- `tests/apiAdapters.test.mjs` — the Vercel and Netlify entry points.
+- `tests/dom/bookingFlow.test.mjs` — drives the real app in jsdom: opens the booking form,
+  submits it, and asserts what goes on the wire and what the customer is told (including that
+  a blocked or un-activated relay is **never** reported as a successful delivery).
 
 ---
 
