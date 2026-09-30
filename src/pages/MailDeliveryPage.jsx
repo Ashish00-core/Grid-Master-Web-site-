@@ -298,6 +298,46 @@ export default function MailDeliveryPage() {
                   />
                 </label>
               </div>
+              <div className="mt-4 rounded-2xl bg-slate-950 border border-slate-800 p-4">
+                <p className="text-xs font-bold text-white flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  How to get the “Personal relay URL” (own Gmail — the most reliable option)
+                </p>
+                <ol className="mt-2.5 space-y-1.5 text-[11px] text-slate-300 list-decimal list-inside">
+                  <li>
+                    Open{" "}
+                    <a
+                      href="https://script.google.com"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-amber-400 hover:underline"
+                    >
+                      script.google.com
+                    </a>{" "}
+                    → <strong className="text-white">New project</strong>.
+                  </li>
+                  <li>
+                    Paste the ready-made script from{" "}
+                    <span className="font-mono text-amber-300">docs/google-apps-script-mail-relay.gs</span>{" "}
+                    (open it on GitHub and press the copy button).
+                  </li>
+                  <li>
+                    <strong className="text-white">Deploy → New deployment → Web app</strong>:{" "}
+                    <em>Execute as</em> <strong className="text-white">Me</strong>, <em>Who has access</em>{" "}
+                    <strong className="text-white">Anyone</strong> → <strong className="text-white">Deploy</strong>.
+                  </li>
+                  <li>
+                    Copy the <strong className="text-white">Web app URL</strong> it shows (it ends with{" "}
+                    <span className="font-mono text-amber-300">/exec</span>).
+                  </li>
+                  <li>
+                    Paste that URL into the field below — <strong className="text-white">no code changes are
+                    needed anywhere</strong>, and you never edit{" "}
+                    <span className="font-mono">src/lib/mailDelivery.js</span>.
+                  </li>
+                </ol>
+              </div>
+
               <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <label className="text-xs text-slate-300">
                   Personal relay URL — own Gmail / Zapier / Make (most reliable)
@@ -335,7 +375,7 @@ export default function MailDeliveryPage() {
                   onClick={handleSaveSettings}
                   className="px-4 py-2.5 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs hover:bg-amber-400 transition-all"
                 >
-                  Save delivery address
+                  Save &amp; use this relay
                 </button>
                 <button
                   onClick={handleResetSettings}
@@ -345,9 +385,12 @@ export default function MailDeliveryPage() {
                 </button>
               </div>
               <p className="text-[11px] text-slate-500 mt-2">
-                Everything here is stored only in this browser, so you can test safely. With a personal relay
-                URL set, bookings are e-mailed from <strong className="text-slate-300">your own Gmail</strong>{" "}
-                and no third-party activation is ever needed — see the setup steps below.
+                After saving, press <strong className="text-slate-300">“Run live delivery test”</strong> below:
+                the “Own mail relay” line must turn green and a test e-mail must arrive in{" "}
+                <strong className="text-slate-300">{recipient}</strong>. Saving here applies to{" "}
+                <strong className="text-slate-300">this browser only</strong> — for all visitors on all
+                devices, set the same URL as <span className="font-mono">VITE_MAIL_WEBHOOK_URL</span> in your
+                Netlify/Vercel environment variables and redeploy (or ask to have it wired into the code).
               </p>
             </details>
 
