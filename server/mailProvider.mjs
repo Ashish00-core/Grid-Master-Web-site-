@@ -9,8 +9,11 @@
  * Configure on Netlify (Site settings → Environment variables) or Vercel
  * (Project → Settings → Environment Variables):
  *
- *   MAIL_PROVIDER = resend | sendgrid | brevo
- *   MAIL_API_KEY  = <provider API key>
+ *   MAIL_PROVIDER = resend | sendgrid | brevo | webhook
+ *   MAIL_API_KEY  = <provider API key>          (not needed for "webhook")
+ *   MAIL_WEBHOOK_URL = <https://…/exec>         (required for "webhook":
+ *                       a Google Apps Script web app, Zapier/Make hook, etc.)
+ *   MAIL_WEBHOOK_SECRET = <shared secret>       (optional, forwarded as `secret`)
  *   MAIL_FROM     = "Grid Master Bookings <bookings@yourdomain.com>"
  *   MAIL_TO       = contactgridmaster@gmail.com        (optional, this is the default)
  *   MAIL_CC       = extra@example.com,second@example.com  (optional)
@@ -53,8 +56,13 @@ export function readProviderConfig(env = {}) {
   const to = parseAddressList(env.MAIL_TO).length ? parseAddressList(env.MAIL_TO) : [DEFAULT_RECIPIENT];
   const cc = parseAddressList(env.MAIL_CC);
 
-  const supported = ['resend', 'sendgrid', 'brevo'];
-  const configured = supported.includes(provider) && Boolean(apiKey) && isValidEmail(from.email);
+  const webhookUrl = sanitizeHeader(env.MAIL_WEBHOOK_URL || '');
+  const webhookSecret = String(env.MAIL_WEBHOOK_SECRET || '').trim();
+  const supported = ['resend', 'sendgrid', 'brevo', 'webhook'];
+  const configured =
+    provider === 'webhook'
+      ? /^https:\/\//.test(webhookUrl)
+      : supported.includes(provider) && Boolean(apiKey) && isValidEmail(from.email);
 
   return {
     provider,
@@ -62,14 +70,18 @@ export function readProviderConfig(env = {}) {
     from,
     to,
     cc,
+    webhookUrl,
+    webhookSecret,
     configured,
     reason: configured
       ? 'configured'
       : !supported.includes(provider)
-        ? 'MAIL_PROVIDER must be one of resend, sendgrid, brevo'
-        : !apiKey
-          ? 'MAIL_API_KEY is missing'
-          : 'MAIL_FROM must be a valid address',
+        ? 'MAIL_PROVIDER must be one of resend, sendgrid, brevo, webhook'
+        : provider === 'webhook'
+          ? 'MAIL_WEBHOOK_URL must be an https:// address'
+          : !apiKey
+            ? 'MAIL_API_KEY is missing'
+            : 'MAIL_FROM must be a valid address',
   };
 }
 
@@ -168,7 +180,37 @@ async function sendBrevo({ subject, text, html, replyTo }, cfg, fetchImpl) {
   };
 }
 
-const SENDERS = { resend: sendResend, sendgrid: sendSendgrid, brevo: sendBrevo };
+/** Generic webhook: Google Apps Script, Zapier, Make, n8n, a Cloudflare Worker… */
+async function sendWebhook({ subject, text, html, replyTo }, cfg, fetchImpl) {
+  const response = await fetchImpl(cfg.webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({
+      secret: cfg.webhookSecret || undefined,
+      to: cfg.to.join(','),
+      cc: cfg.cc.join(','),
+      subject,
+      text,
+      html,
+      replyTo,
+      source: 'grid-master-serverless',
+    }),
+  });
+  const raw = await response.text().catch(() => '');
+  let data = null;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    data = null;
+  }
+  return {
+    ok: response.ok && (!data || data.ok !== false),
+    status: response.status,
+    detail: (data && (data.detail || data.message)) || `Relay answered HTTP ${response.status}.`,
+  };
+}
+
+const SENDERS = { resend: sendResend, sendgrid: sendSendgrid, brevo: sendBrevo, webhook: sendWebhook };
 
 /**
  * Send one message through the configured provider.

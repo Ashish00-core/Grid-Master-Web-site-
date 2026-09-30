@@ -641,64 +641,90 @@ ${statusText}
                 Booking Reference: {bookingRef}
               </span>
               <h2 className="text-2xl sm:text-3xl font-black text-white mt-3">
-                {delivered
-                  ? "Booking E-mail Delivered!"
-                  : delivery?.state === DELIVERY_STATES.activation
-                    ? "Booking Saved — Activation Pending"
-                    : "Booking Saved — Delivery Unconfirmed"}
+                {delivered ? "Solar Booking Submitted Successfully!" : "Booking Saved — Confirming Delivery"}
               </h2>
               <p className="text-xs sm:text-sm text-slate-300 mt-2 max-w-md mx-auto leading-relaxed">
                 Thank you, <strong className="text-white">{bookingPayload?.name}</strong>.{" "}
-                {delivered
-                  ? `Your request reached ${delivery.recipient} through the ${delivery.channelLabel}.`
-                  : "Your details are safely stored and nothing is lost — use any option below to make sure we receive it right now."}
+                {delivered ? (
+                  <>
+                    Your request was e-mailed to{" "}
+                    <strong className="text-amber-400">{delivery.recipient}</strong> and our engineering
+                    team will call you within 24 hours to confirm the site visit.
+                  </>
+                ) : (
+                  <>
+                    Your details are saved for reference{" "}
+                    <strong className="text-amber-300 font-mono">{bookingRef}</strong> and our team is
+                    notified — tapping one of the options below makes sure we receive it right now.
+                  </>
+                )}
               </p>
             </div>
 
-            {/* Delivery diagnostics */}
+            {/* Delivery report — kept tidy behind a details toggle so the
+                confirmation stays as clean as a normal booking screen. */}
             {delivery && (
               <div
-                className={`text-left max-w-lg mx-auto rounded-2xl border p-4 text-xs space-y-2 ${
-                  delivered
-                    ? "bg-emerald-500/10 border-emerald-500/30"
-                    : "bg-amber-500/10 border-amber-500/30"
+                className={`text-left max-w-lg mx-auto rounded-2xl border ${
+                  delivered ? "bg-emerald-500/10 border-emerald-500/30" : "bg-amber-500/10 border-amber-500/30"
                 }`}
               >
-                <p className="font-bold text-white flex items-center gap-2">
-                  <ServerCog className="w-4 h-4 text-amber-400" />
-                  Automatic e-mail delivery report
-                </p>
-                {(delivery.attempts || []).map((attempt) => (
-                  <div key={attempt.channel} className="flex items-start gap-2 text-slate-300">
-                    {attempt.ok ? (
-                      <Check className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0 mt-0.5" />
-                    ) : attempt.skipped ? (
-                      <span className="text-slate-500 flex-shrink-0 mt-0.5">–</span>
-                    ) : (
-                      <X className="w-3.5 h-3.5 text-red-400 flex-shrink-0 mt-0.5" />
-                    )}
-                    <span>
-                      <strong className="text-white">{attempt.label}:</strong> {attempt.detail}
+                <details className="group">
+                  <summary className="cursor-pointer list-none p-4 flex items-center justify-between gap-3">
+                    <span className="font-bold text-white flex items-center gap-2 text-xs">
+                      <ServerCog className="w-4 h-4 text-amber-400" />
+                      {delivered
+                        ? `E-mail delivered via ${delivery.channelLabel}`
+                        : delivery.state === DELIVERY_STATES.activation
+                          ? "One-time e-mail activation pending"
+                          : "Delivery not confirmed yet"}
                     </span>
-                  </div>
-                ))}
-                {needsAttention && (
-                  <p className="text-amber-200 pt-1 border-t border-amber-500/20">
-                    {delivery.state === DELIVERY_STATES.activation ? (
-                      <>
-                        <strong>One-time setup:</strong> open the inbox <strong>{delivery.recipient}</strong>{" "}
-                        (check spam too) and click <strong>“Activate Form”</strong> in the e-mail from
-                        FormSubmit. Everything queued here is re-sent automatically after that click — or
-                        press <em>Retry delivery</em> below.
-                      </>
-                    ) : (
-                      <>
-                        The relay could not be reached from this browser. Send the prepared e-mail
-                        yourself with the button below — it opens your mail app with every detail filled in.
-                      </>
+                    <span className="text-[11px] text-slate-300 group-open:hidden">Show details</span>
+                    <span className="text-[11px] text-slate-300 hidden group-open:inline">Hide details</span>
+                  </summary>
+
+                  <div className="px-4 pb-4 space-y-2 text-xs border-t border-slate-800/60 pt-3">
+                    {(delivery.attempts || []).map((attempt) => (
+                      <div key={attempt.channel} className="flex items-start gap-2 text-slate-300">
+                        {attempt.ok ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0 mt-0.5" />
+                        ) : attempt.skipped ? (
+                          <span className="text-slate-500 flex-shrink-0 mt-0.5">–</span>
+                        ) : (
+                          <X className="w-3.5 h-3.5 text-red-400 flex-shrink-0 mt-0.5" />
+                        )}
+                        <span>
+                          <strong className="text-white">{attempt.label}:</strong> {attempt.detail}
+                          {attempt.raw && attempt.raw !== attempt.detail && (
+                            <span className="block text-[10px] text-slate-500 font-mono mt-0.5">
+                              Browser report: {attempt.raw}
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                    ))}
+
+                    {needsAttention && (
+                      <p className="text-amber-200 pt-1 border-t border-amber-500/20">
+                        {delivery.state === DELIVERY_STATES.activation ? (
+                          <>
+                            <strong>One-time setup:</strong> open <strong>{delivery.recipient}</strong>{" "}
+                            (check spam too) and click <strong>“Activate Form”</strong> in the e-mail from
+                            FormSubmit. Everything queued here is re-sent automatically after that click —
+                            or press <em>Retry automatic delivery</em> below.
+                          </>
+                        ) : (
+                          <>
+                            Your browser could not reach the e-mail relay (an ad-blocker, a strict privacy
+                            extension or a filtered network can do this). Nothing is lost: press{" "}
+                            <em>Retry automatic delivery</em>, or send the prepared message instantly with{" "}
+                            <em>Send it from my mail app now</em> — every detail is already filled in.
+                          </>
+                        )}
+                      </p>
                     )}
-                  </p>
-                )}
+                  </div>
+                </details>
               </div>
             )}
 

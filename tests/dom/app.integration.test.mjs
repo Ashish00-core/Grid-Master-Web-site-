@@ -66,6 +66,9 @@ expose('IS_REACT_ACT_ENVIRONMENT', false);
   'HTMLElement', 'HTMLInputElement', 'HTMLTextAreaElement', 'HTMLSelectElement',
   'Element', 'Node', 'Event', 'MouseEvent', 'KeyboardEvent', 'CustomEvent',
   'DocumentFragment', 'requestAnimationFrame', 'cancelAnimationFrame', 'Blob',
+  // The bundle must build the very same FormData class the DOM offers,
+  // otherwise multipart bodies cannot be asserted.
+  'FormData', 'Headers',
 ].forEach((key) => {
   if (window[key] !== undefined) expose(key, window[key]);
 });
@@ -87,10 +90,34 @@ let routes = [];
 
 function mockFetch(url, init) {
   const absolute = String(url);
+  const rawBody = init?.body;
+  const isFormData =
+    Boolean(rawBody) &&
+    typeof rawBody.entries === 'function' &&
+    typeof rawBody.append === 'function' &&
+    !(rawBody instanceof window.ArrayBuffer);
+  let body = null;
+  if (isFormData) {
+    body = Object.fromEntries([...rawBody.entries()].map(([key, value]) => [key, String(value)]));
+  } else if (typeof rawBody === 'string') {
+    try {
+      body = JSON.parse(rawBody);
+    } catch {
+      body = rawBody;
+    }
+  }
   const call = {
     url: absolute,
     method: init?.method || 'GET',
-    body: init?.body ? JSON.parse(init.body) : null,
+    init,
+    body,
+    transport: isFormData
+      ? 'formdata'
+      : init?.mode === 'no-cors'
+        ? 'nocors'
+        : (init?.headers?.['Content-Type'] || '').startsWith('text/plain')
+          ? 'text'
+          : 'json',
     at: Date.now(),
   };
   mockFetch.calls.push(call);
@@ -262,13 +289,15 @@ test('booking form sends the exact payload FormSubmit needs and reports real del
 
   click(findButton('Confirm & Submit Booking', container));
 
-  await waitFor(() => text(container).includes('Booking E-mail Delivered!'), { label: 'delivered state' });
+  await waitFor(() => text(container).includes('Solar Booking Submitted Successfully!'), { label: 'delivered state' });
 
   const posts = formSubmitCalls();
   assert.equal(posts.length, 1, 'exactly one FormSubmit submission');
   const payload = posts[0].body;
 
   assert.equal(posts[0].url, 'https://formsubmit.co/ajax/contactgridmaster%40gmail.com');
+  assert.equal(posts[0].transport, 'formdata', 'no CORS preflight: ad-blockers cannot break the booking');
+  assert.equal(posts[0].init.headers['Content-Type'], undefined, 'the browser adds the multipart boundary');
   assert.match(payload._subject, /^New Solar Booking \[GM-SR-\d{6}\] — Meera Subramanian$/);
   assert.equal(payload._template, 'table');
   assert.equal(payload._captcha, 'false', 'AJAX submissions must disable reCAPTCHA');
@@ -283,7 +312,8 @@ test('booking form sends the exact payload FormSubmit needs and reports real del
   assert.ok(payload.time_slot, 'time slot present');
   assert.ok(payload.reference_id?.startsWith('GM-SR-'));
 
-  assert.match(text(container), /Sent to contactgridmaster@gmail\.com/);
+  assert.match(text(container), /Solar Booking Submitted Successfully!/);
+  assert.match(text(container), /contactgridmaster@gmail\.com/);
   assert.equal(outbox().length, 0, 'nothing left queued after a confirmed delivery');
   assert.equal(consoleErrors.length, 0, `no console errors: ${consoleErrors.join(' | ')}`);
 
@@ -296,7 +326,7 @@ test('a pending FormSubmit activation is shown honestly, queued, and retryable',
   fillBookingForm(container);
   click(findButton('Confirm & Submit Booking', container));
 
-  await waitFor(() => text(container).includes('Booking Saved — Activation Pending'), {
+  await waitFor(() => text(container).includes('One-time e-mail activation pending'), {
     label: 'activation state',
   });
 
@@ -317,7 +347,7 @@ test('a pending FormSubmit activation is shown honestly, queued, and retryable',
   // Fix the relay (activation completed) and press retry.
   okRelays();
   click(findButton('Retry automatic delivery', container));
-  await waitFor(() => text(container).includes('Booking E-mail Delivered!'), { label: 'retry success' });
+  await waitFor(() => text(container).includes('Solar Booking Submitted Successfully!'), { label: 'retry success' });
   assert.equal(outbox().length, 0, 'queue drained after the successful retry');
 
   unmountAll();
@@ -329,12 +359,12 @@ test('an offline visitor keeps a queued booking instead of a fake success', asyn
   fillBookingForm(container);
   click(findButton('Confirm & Submit Booking', container));
 
-  await waitFor(() => text(container).includes('Booking Saved — Delivery Unconfirmed'), {
+  await waitFor(() => text(container).includes('Booking Saved — Confirming Delivery'), {
     label: 'queued state',
   });
 
   const body = text(container);
-  assert.ok(!body.includes('Booking E-mail Delivered!'), 'must not claim success');
+  assert.ok(!body.includes('Solar Booking Submitted Successfully!'), 'must not claim success');
   assert.match(body, /Send it from my mail app now/);
   assert.match(body, /Send on WhatsApp/);
   assert.equal(outbox().length, 1, 'booking survives offline');
@@ -353,7 +383,7 @@ test('receipt copy and download work in every delivery state (regression: target
   const container = await openBookingModal();
   fillBookingForm(container);
   click(findButton('Confirm & Submit Booking', container));
-  await waitFor(() => text(container).includes('Booking Saved — Activation Pending'), { label: 'activation state' });
+  await waitFor(() => text(container).includes('One-time e-mail activation pending'), { label: 'activation state' });
 
   click(findButton('Copy Reference & Receipt', container));
   await waitFor(() => clipboard.value.length > 0, { label: 'clipboard write' });
@@ -447,6 +477,64 @@ test('quote builder can add and clear equipment (regression: missing onClearQuot
   await waitFor(() => !findButton('Clear all', container), { label: 'quote panel disappears' });
   assert.ok(!text(container).includes('Your Custom Equipment Package'));
   assert.equal(consoleErrors.length, 0, `console errors: ${consoleErrors.join(' | ')}`);
+
+  unmountAll();
+});
+
+test('an owner-configured personal relay delivers without any third party', async () => {
+  routes = [
+    ['script.google.com', { status: 200, body: { ok: true, detail: 'Delivered from your Gmail' } }],
+    ['formsubmit.co', { status: 200, body: { success: 'true' } }],
+    ['/api/send-booking', { status: 501, body: { ok: false, configured: false } }],
+  ];
+  window.localStorage.setItem(
+    'grid-master-mail-settings-v1',
+    JSON.stringify({
+      recipient: 'contactgridmaster@gmail.com',
+      cc: [],
+      webhookUrl: 'https://script.google.com/macros/s/AKfycbTEST/exec',
+      webhookSecret: '',
+      web3formsKey: '',
+      disabledChannels: [],
+    }),
+  );
+
+  const container = await openBookingModal();
+  fillBookingForm(container);
+  click(findButton('Confirm & Submit Booking', container));
+
+  await waitFor(() => text(container).includes('Solar Booking Submitted Successfully!'), {
+    label: 'personal relay delivery',
+  });
+
+  const ownRelayCalls = mockFetch.calls.filter((call) => call.url.includes('script.google.com'));
+  assert.equal(ownRelayCalls.length, 1, 'the personal relay is contacted exactly once');
+  assert.equal(ownRelayCalls[0].transport, 'text', 'no preflight for the Apps Script relay');
+  assert.equal(ownRelayCalls[0].body.fields.customer_name, 'Meera Subramanian');
+  assert.equal(ownRelayCalls[0].body.to, 'contactgridmaster@gmail.com');
+  assert.equal(formSubmitCalls().length, 0, 'the built-in relay is not used when the owner relay works');
+  assert.match(text(container), /Own mail relay/);
+  assert.equal(outbox().length, 0);
+
+  window.localStorage.removeItem('grid-master-mail-settings-v1');
+  unmountAll();
+});
+
+test('a blocked FormSubmit relay is retried before the booking is queued', async () => {
+  routes = [
+    ['/api/send-booking', { status: 501, body: { ok: false, configured: false } }],
+    ['formsubmit.co', new TypeError('Failed to fetch')],
+  ];
+  const container = await openBookingModal();
+  fillBookingForm(container);
+  click(findButton('Confirm & Submit Booking', container));
+
+  await waitFor(() => text(container).includes('Booking Saved — Confirming Delivery'), { label: 'queued state' });
+
+  const posts = formSubmitCalls();
+  assert.ok(posts.length >= 2, `the relay is retried (got ${posts.length} attempts)`);
+  assert.deepEqual(posts.map((call) => call.transport).slice(0, 2), ['formdata', 'json']);
+  assert.equal(outbox().length, 1, 'the booking is queued, never lost');
 
   unmountAll();
 });

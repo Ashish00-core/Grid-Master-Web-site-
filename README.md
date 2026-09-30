@@ -17,7 +17,7 @@ This repository is the full web application (a React + Vite + Tailwind + React R
 | `/calculator` | Solar system calculator |
 | `/team` | Engineering team + Head Engineer visiting card |
 | `/contact` | Contact details, booking and FAQ |
-| `/mail-delivery` | Mail Delivery Center — verify automatic e-mails, activate the relay, re-send the queue |
+| `/mail-delivery` | Mail Delivery Center — verify automatic e-mails, set your own Gmail relay, re-send the queue |
 
 Menu links open real pages (no fast in-page scrolling); each page opens at the top with a soft fade-in.
 Because these are real URLs the host must serve `index.html` for unknown paths — already configured for
@@ -44,9 +44,11 @@ Netlify (`netlify.toml`, `public/_redirects`) and Vercel (`vercel.json`). For a 
 
 ### 4. 📅 Online Booking Engine
 - Purpose (Home/Building), service type, preferred lead engineer, date (no past dates), time slot, contact & property details.
-- Delivered to `contactgridmaster@gmail.com` by a three-channel engine (own server relay → FormSubmit → Web3Forms) with a local retry queue.
-- Honest status handling: the receipt shows the answer of every relay, retries on demand, and offers
-  mail-app / WhatsApp / direct-call fallbacks carrying the full booking details.
+- Delivered to `contactgridmaster@gmail.com` by a four-channel engine (own Gmail webhook → server relay →
+  FormSubmit → Web3Forms), sent as a CORS-preflight-free request so ad-blockers cannot break it, with
+  automatic retries and a local retry queue.
+- Honest but friendly status handling: a clean confirmation screen, with the per-relay report behind a
+  “Show details” toggle, plus retry / mail-app / WhatsApp / direct-call fallbacks carrying the full booking.
 - Owner dashboard at `/mail-delivery`: live delivery test, one-time relay activation guidance, queued-message
   management and delivery history.
 - Copy or download an official booking receipt (.txt) with the reference ID and equipment package.
@@ -76,7 +78,7 @@ Netlify (`netlify.toml`, `public/_redirects`) and Vercel (`vercel.json`). For a 
 - **Icons**: Lucide React
 - **QR**: qrcode.react
 - **Typography**: Inter & Fira Code (Google Fonts)
-- **E-mail delivery**: 3-channel engine (`src/lib/mailDelivery.js`) — own serverless relay → FormSubmit → Web3Forms, with a local retry queue
+- **E-mail delivery**: 4-channel engine (`src/lib/mailDelivery.js`) — own Gmail/webhook relay → serverless relay → FormSubmit → Web3Forms, preflight-free transports, automatic retries and a local retry queue
 - **Optional backend**: serverless function (`netlify/functions/send-booking.mjs` + `api/send-booking.js`) for Resend / SendGrid / Brevo
 - **Tests**: Node's built-in test runner (39 tests: engine unit tests, jsdom UI integration, serverless relay) + ESLint 9
 - **Deployment**: Vercel / Netlify / Cloudflare Pages ready (`netlify.toml`, `vercel.json` included)
@@ -99,43 +101,56 @@ Open **`/mail-delivery`** (also linked in the footer as *Mail Delivery Center*) 
 **“Run live delivery test”**. The page sends a real test message through every relay and prints the exact
 answer of each one, so you can see immediately whether `contactgridmaster@gmail.com` is receiving bookings.
 
-Every booking is also stored in a local retry queue until a relay confirms delivery, so a message can never
-be lost — it is re-sent automatically on the visitor's next visit, when the connection returns, and from the
-delivery centre itself.
+Nothing is ever lost: every booking is stored in a local retry queue until a relay confirms delivery and is
+re-sent automatically on the next visit, when the connection returns, and from the delivery centre itself.
 
-### ⚠️ Important: Activate the booking e-mail (one-time, FormSubmit relay)
-FormSubmit — the free relay used out of the box — **silently discards every submission until the recipient
-inbox is activated**. This is the classic reason “automatic mails never arrive”. To activate:
+### 🔒 The permanent fix: your own Gmail relay (no third party, no activation)
+This is the recommended setup. Bookings are e-mailed **from your own Gmail account** — nothing can be blocked
+by an ad-blocker, and there is no activation link to click.
+
+1. Open <https://script.google.com> → **New project**.
+2. Paste the ready-made script from **`docs/google-apps-script-mail-relay.gs`** (it also writes an optional
+   Google‑Sheet log and can auto-reply to the customer).
+3. **Deploy → New deployment → Web app**, *Execute as* **Me**, *Who has access* **Anyone**, then copy the
+   **Web app URL** (it ends with `/exec`).
+4. Website → footer → **Mail Delivery Center** → paste it into **"Personal relay URL"** → **Save** →
+   **Run live delivery test**. A test e-mail must arrive in your inbox — that is your proof.
+
+Once that URL is set, it becomes the **first** channel for every booking; FormSubmit stays as an automatic
+backup. The same URL can also be set at build time with `VITE_MAIL_WEBHOOK_URL`, or server-side with
+`MAIL_PROVIDER=webhook` + `MAIL_WEBHOOK_URL`.
+
+### ⚠️ Why a booking can say "Delivery not confirmed" (and what to do)
+The website now reports the truth instead of pretending to succeed. The common causes:
+
+| What the report says | Cause | Fix |
+| --- | --- | --- |
+| *“The browser could not reach the relay … ad-blocker”* | An ad-blocker / strict privacy extension, a filtered network, or a blocked CORS preflight | The site already retries with a preflight-free multipart POST. Then either allow `formsubmit.co`, or use your own Gmail relay above (never blocked) |
+| *“Activation pending”* | FormSubmit has not been activated for the inbox yet | Click **Activate Form** in the e-mail FormSubmit sent to `contactgridmaster@gmail.com` (check Spam/Promotions) |
+| *“Server relay is not available”* | The optional serverless function is not deployed / has no provider key | Harmless — the relays below it are used instead. Deploy it only for domain-based sending |
+
+Filtered networks and strict privacy browsers are exactly why the multipart (preflight-free) transport and
+your own Gmail relay exist: they keep the customer flow smooth with no scary errors.
+
+### ⚠️ Optional: activate the FormSubmit relay too (30 seconds, one time)
+FormSubmit **silently discards every submission until the recipient inbox is activated** — the classic reason
+“automatic mails never arrive”:
 
 1. Open `/mail-delivery` on the live site and press **“Run live delivery test”** (or submit any booking).
 2. Open `contactgridmaster@gmail.com` — FormSubmit has just sent an e-mail with an **Activate Form** link
-   (check the **Spam** and **Promotions** folders and mark it “not spam”).
-3. Click that **Activate Form** link.
-4. Press **“Run live delivery test”** again — every relay turns green and anything queued is re-sent.
+   (check **Spam** and **Promotions**).
+3. Click that link, then press **“Run live delivery test”** again — every relay turns green and anything
+   queued is re-sent.
 
-The website now shows the customer an honest state instead of a fake success: *“Booking E-mail Delivered!”*,
-*“Booking Saved — Activation Pending”* or *“Booking Saved — Delivery Unconfirmed”*, and it always offers a
-one-click mail-app / WhatsApp / phone fallback that carries the full booking details.
-
-### 🚀 Optional: send from your own domain (no third-party activation needed)
-Deploy the included serverless endpoint with a provider API key and messages are sent from your own domain
-instead — this is the most reliable option and needs no activation click:
-
-| Netlify (Site settings → Environment variables) / Vercel (Project → Environment variables) | Example |
-| --- | --- |
-| `MAIL_PROVIDER` | `resend` \| `sendgrid` \| `brevo` |
-| `MAIL_API_KEY` | `re_xxxxxxxx` (provider API key) |
-| `MAIL_FROM` | `Grid Master Bookings <bookings@yourdomain.com>` *(verify the domain with the provider)* |
-| `MAIL_TO` | `contactgridmaster@gmail.com` *(default — no need to set)* |
-| `MAIL_CC` | `engineer@yourdomain.com,office@yourdomain.com` *(optional)* |
-
-When the endpoint is not configured it answers `501 { configured: false }` and the browser transparently falls
-back to FormSubmit, so nothing breaks either way. See `.env.example` for the build-time (`VITE_*`) options.
+### 🚀 Optional: send from your own domain (Resend / SendGrid / Brevo)
+Set these in Netlify (Site settings → Environment variables) or Vercel (Project → Environment variables):
+`MAIL_PROVIDER`, `MAIL_API_KEY`, `MAIL_FROM` (optional `MAIL_TO`, `MAIL_CC`). When unconfigured the endpoint
+answers `501 { configured: false }` and the browser falls back automatically. See `.env.example`.
 
 ### 🧪 Verify everything locally
 ```bash
 npm run lint      # ESLint 9 (0 errors)
-npm test          # 39 tests: engine unit + jsdom UI integration + serverless relay
+npm test          # 51 tests: engine unit + jsdom UI integration + serverless relay
 npm run verify    # lint + tests + production build
 ```
 
@@ -179,11 +194,13 @@ Grid-Master-Web-site-/
 ├── eslint.config.js                # ESLint 9 flat config
 ├── .env.example                    # Optional mail-provider / build variables
 ├── run.bat                         # Windows one-click launcher
+├── docs/
+│   └── google-apps-script-mail-relay.gs   # ready-to-paste own-Gmail relay
 ├── netlify/functions/              # Serverless mail endpoint (Netlify)
 ├── api/                            # Serverless mail endpoint (Vercel)
 ├── server/
 │   └── mailProvider.mjs            # Resend / SendGrid / Brevo sender
-├── tests/                          # 39 automated tests (engine, UI, relay)
+├── tests/                          # 51 automated tests (engine, UI, relay)
 ├── public/
 └── src/
     ├── main.jsx

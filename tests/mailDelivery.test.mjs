@@ -25,6 +25,10 @@ import {
   getMailSettings,
   resetMailSettings,
   sendViaFormSubmit,
+  sendViaWebhook,
+  buildFormSubmitPayload,
+  isHttpUrl,
+  CHANNEL_ORDER,
   DELIVERY_STATES,
   MAIL_CONFIG,
 } from '../src/lib/mailDelivery.js';
@@ -51,11 +55,38 @@ function jsonResponse(body, status = 200) {
   };
 }
 
-/** Records every call and answers with the supplied queue of responses. */
+/**
+ * Records every call and answers with the supplied queue of responses.
+ * Bodies are normalised so both JSON and multipart/form-data payloads can be
+ * asserted with the same expectations.
+ */
 function mockFetch(queue) {
   const calls = [];
   const fetchImpl = async (url, init) => {
-    calls.push({ url, init, body: init?.body ? JSON.parse(init.body) : null });
+    const raw = init?.body;
+    const isFormData = typeof FormData !== 'undefined' && raw instanceof FormData;
+    let body = null;
+    if (isFormData) {
+      body = Object.fromEntries([...raw.entries()].map(([key, value]) => [key, String(value)]));
+    } else if (typeof raw === 'string') {
+      try {
+        body = JSON.parse(raw);
+      } catch {
+        body = raw;
+      }
+    }
+    calls.push({
+      url: String(url),
+      init,
+      body,
+      transport: isFormData
+        ? 'formdata'
+        : init?.mode === 'no-cors'
+          ? 'nocors'
+          : (init?.headers?.['Content-Type'] || '').startsWith('text/plain')
+            ? 'text'
+            : 'json',
+    });
     const next = queue.shift();
     if (next === undefined) throw new TypeError('Failed to fetch');
     if (typeof next === 'function') return next(url, init);
@@ -66,6 +97,9 @@ function mockFetch(queue) {
 }
 
 const settings = { recipient: 'owner@example.com', cc: [], disabledChannels: [] };
+
+/** Keep retry pauses out of the test runtime. */
+const fast = { retryDelayMs: 0 };
 
 const sampleBooking = {
   reference: 'GM-SR-123456',
@@ -179,6 +213,7 @@ test('FormSubmit payload sends the field names the relay requires', async () => 
     fetchImpl,
     settings,
     replyTo: 'meera@example.com',
+    ...fast,
   });
 
   assert.equal(result.ok, true);
@@ -202,7 +237,7 @@ test('FormSubmit flags the one-time activation answer instead of reporting succe
     }),
   ]);
 
-  const result = await sendViaFormSubmit(buildBookingMessage(sampleBooking), { fetchImpl, settings });
+  const result = await sendViaFormSubmit(buildBookingMessage(sampleBooking), { fetchImpl, settings, ...fast });
   assert.equal(result.ok, false);
   assert.equal(result.activationRequired, true);
 });
@@ -213,6 +248,7 @@ test('an invalid customer address is never sent as _replyto', async () => {
     fetchImpl,
     settings,
     replyTo: 'not-an-email',
+    ...fast,
   });
   const [call] = fetchImpl.calls;
   assert.equal(call.body._replyto, undefined);
@@ -230,6 +266,7 @@ test('a working company server is used first and short-circuits the rest', async
     fetchImpl,
     storage,
     settings,
+    ...fast,
   });
 
   assert.equal(report.state, DELIVERY_STATES.delivered);
@@ -249,13 +286,26 @@ test('an unconfigured server falls through to FormSubmit without losing the book
     fetchImpl,
     storage,
     settings,
+    ...fast,
   });
 
   assert.equal(report.state, DELIVERY_STATES.delivered);
   assert.equal(report.channel, 'formsubmit');
-  assert.equal(report.attempts.length, 2);
-  assert.equal(report.attempts[0].skipped, true);
+  assert.deepEqual(
+    report.attempts.map((attempt) => attempt.channel),
+    ['webhook', 'backend', 'formsubmit'],
+    'channels are tried in priority order',
+  );
+  assert.equal(report.attempts[0].skipped, true, 'no personal relay configured yet');
+  assert.equal(report.attempts[1].skipped, true, 'server relay not configured');
+  assert.equal(report.attempts[2].ok, true);
   assert.equal(getOutbox(storage).length, 0);
+
+  // The transport that actually delivered must be preflight-free, otherwise
+  // ad-blockers and strict privacy modes break the booking silently.
+  const delivered = fetchImpl.calls.at(-1);
+  assert.equal(delivered.transport, 'formdata');
+  assert.equal(delivered.init.headers['Content-Type'], undefined, 'the browser sets the multipart boundary');
 });
 
 test('a second send skips the missing server relay (probe is cached)', async () => {
@@ -266,8 +316,8 @@ test('a second send skips the missing server relay (probe is cached)', async () 
   ]);
   const storage = fakeStorage();
 
-  await deliverMessage(buildBookingMessage(sampleBooking), { fetchImpl, storage, settings });
-  await deliverMessage(buildBookingMessage(sampleBooking), { fetchImpl, storage, settings });
+  await deliverMessage(buildBookingMessage(sampleBooking), { fetchImpl, storage, settings, ...fast });
+  await deliverMessage(buildBookingMessage(sampleBooking), { fetchImpl, storage, settings, ...fast });
 
   // 1st delivery = probe + formsubmit, 2nd delivery = formsubmit only
   assert.equal(fetchImpl.calls.length, 3);
@@ -287,6 +337,7 @@ test('activation-required answers are queued and explained', async () => {
     storage,
     settings,
     reference: 'GM-SR-123456',
+    ...fast,
   });
 
   assert.equal(report.state, DELIVERY_STATES.activation);
@@ -307,7 +358,7 @@ test('a network failure still queues the booking so nothing is lost', async () =
   ]);
   const storage = fakeStorage();
 
-  const report = await deliverMessage(buildBookingMessage(sampleBooking), { fetchImpl, storage, settings });
+  const report = await deliverMessage(buildBookingMessage(sampleBooking), { fetchImpl, storage, settings, ...fast });
 
   assert.equal(report.state, DELIVERY_STATES.queued);
   assert.equal(report.queued, true);
@@ -333,7 +384,7 @@ test('queued bookings are re-sent and removed once a relay accepts them', async 
     jsonResponse({ ok: false, configured: false }, 501),
     jsonResponse({ success: 'false', message: 'Service unavailable' }, 503),
   ]);
-  const first = await flushOutbox({ fetchImpl: failing, storage, settings });
+  const first = await flushOutbox({ fetchImpl: failing, storage, settings, ...fast });
   assert.equal(first.delivered, 0);
   assert.equal(getOutbox(storage).length, 1);
   assert.equal(getOutbox(storage)[0].id, 'queued-1');
@@ -341,7 +392,7 @@ test('queued bookings are re-sent and removed once a relay accepts them', async 
   // Second flush: the relay accepts -> queue drains. (The missing server relay
   // is remembered from the first attempt, so only FormSubmit is contacted.)
   const succeeding = mockFetch([jsonResponse({ success: 'true' })]);
-  const second = await flushOutbox({ fetchImpl: succeeding, storage, settings });
+  const second = await flushOutbox({ fetchImpl: succeeding, storage, settings, ...fast });
   assert.equal(second.delivered, 1);
   assert.equal(getOutbox(storage).length, 0);
   assert.equal(succeeding.calls.length, 1);
@@ -357,4 +408,174 @@ test('the outbox never grows past the configured limit', () => {
     queueMessage({ kind: 'booking', reference: `GM-${index}`, message: buildBookingMessage(sampleBooking) }, storage);
   }
   assert.equal(getOutbox(storage).length, MAIL_CONFIG.outboxLimit);
+});
+
+/* ---------------------------------------------------------------- *
+ * Resilience: preflight-free transport + automatic retries
+ * ---------------------------------------------------------------- */
+
+test('a transient network failure is retried and succeeds on the JSON fallback', async () => {
+  const fetchImpl = mockFetch([
+    () => {
+      throw new TypeError('Failed to fetch');
+    },
+    jsonResponse({ success: 'true', message: 'Email sent' }),
+  ]);
+
+  const result = await sendViaFormSubmit(buildBookingMessage(sampleBooking), {
+    fetchImpl,
+    settings,
+    replyTo: 'meera@example.com',
+    retryDelayMs: 0,
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(
+    fetchImpl.calls.map((call) => call.transport),
+    ['formdata', 'json'],
+    'multipart is tried first, JSON is used as the fallback',
+  );
+  assert.equal(fetchImpl.calls[0].body.customer_name, 'Meera Subramanian');
+  assert.equal(fetchImpl.calls[1].body.customer_name, 'Meera Subramanian');
+});
+
+test('a blocked relay is reported with an actionable message and queued', async () => {
+  const blocked = () => {
+    throw new TypeError('Failed to fetch');
+  };
+  const fetchImpl = mockFetch([blocked, blocked, blocked, blocked]);
+  const storage = fakeStorage();
+
+  const report = await deliverMessage(buildBookingMessage(sampleBooking), {
+    fetchImpl,
+    storage,
+    settings,
+    ...fast,
+  });
+
+  assert.equal(report.state, DELIVERY_STATES.queued);
+  assert.match(report.detail, /ad-blocker|blocking/i);
+  assert.equal(getOutbox(storage).length, 1, 'the booking is never lost');
+
+  const relayAttempt = report.attempts.find((attempt) => attempt.channel === 'formsubmit');
+  assert.ok(relayAttempt.raw.includes('Failed to fetch'), 'raw browser error is kept for diagnostics');
+  assert.ok(
+    fetchImpl.calls.filter((call) => call.url.includes('formsubmit')).length >= 2,
+    'the blocked relay is retried before giving up',
+  );
+});
+
+test('formsubmit payload keeps the relay-required fields for every transport', () => {
+  const payload = buildFormSubmitPayload(buildBookingMessage(sampleBooking), {
+    settings,
+    replyTo: 'meera@example.com',
+  });
+  assert.equal(payload._template, 'table');
+  assert.equal(payload._captcha, 'false');
+  assert.equal(payload.email, 'meera@example.com');
+  assert.equal(payload._replyto, 'meera@example.com');
+  assert.equal(payload.customer_name, 'Meera Subramanian');
+  assert.equal(payload.customer_phone, '+91 90000 00000');
+});
+
+/* ---------------------------------------------------------------- *
+ * The owner's own relay (Google Apps Script / Zapier / Make)
+ * ---------------------------------------------------------------- */
+
+test('the personal relay is tried first and short-circuits everything else', async () => {
+  const fetchImpl = mockFetch([jsonResponse({ ok: true, detail: 'Mail sent from your Gmail' })]);
+  const storage = fakeStorage();
+  const ownRelay = {
+    recipient: 'owner@example.com',
+    cc: [],
+    disabledChannels: [],
+    webhookUrl: 'https://script.google.com/macros/s/AKfycbxxxx/exec',
+    webhookSecret: 'shared-secret',
+  };
+
+  const report = await deliverMessage(buildBookingMessage(sampleBooking), {
+    fetchImpl,
+    storage,
+    settings: ownRelay,
+    ...fast,
+  });
+
+  assert.equal(report.state, DELIVERY_STATES.delivered);
+  assert.equal(report.channel, 'webhook');
+  assert.equal(fetchImpl.calls.length, 1, 'nothing else is contacted once your own relay accepts');
+  const [call] = fetchImpl.calls;
+  assert.equal(call.transport, 'text', 'sent as a CORS-simple request: no preflight');
+  assert.equal(call.body.secret, 'shared-secret');
+  assert.equal(call.body.to, 'owner@example.com');
+  assert.match(call.body.subject, /GM-SR-123456/);
+  assert.equal(call.body.fields.customer_name, 'Meera Subramanian');
+});
+
+test('a relay that refuses CORS still receives the message (opaque retry)', async () => {
+  const fetchImpl = mockFetch([
+    () => {
+      throw new TypeError('Failed to fetch');
+    },
+    jsonResponse({}),
+  ]);
+  const result = await sendViaWebhook(buildBookingMessage(sampleBooking), {
+    fetchImpl,
+    settings: { recipient: 'o@example.com', cc: [], disabledChannels: [], webhookUrl: 'https://example.com/hook' },
+    retryDelayMs: 0,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.opaque, true);
+  assert.deepEqual(fetchImpl.calls.map((call) => call.transport), ['text', 'nocors']);
+});
+
+test('an own relay that answers with an HTTP error is not treated as delivered', async () => {
+  const fetchImpl = mockFetch([jsonResponse({ detail: 'Script error' }, 500)]);
+  const result = await sendViaWebhook(buildBookingMessage(sampleBooking), {
+    fetchImpl,
+    settings: { recipient: 'o@example.com', cc: [], disabledChannels: [], webhookUrl: 'https://example.com/hook' },
+    retryDelayMs: 0,
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.detail, /Script error|HTTP 500/);
+});
+
+test('a misconfigured personal relay URL is ignored instead of breaking the pipeline', async () => {
+  const fetchImpl = mockFetch([
+    jsonResponse({ ok: false, configured: false }, 501),
+    jsonResponse({ success: 'true' }),
+  ]);
+  const report = await deliverMessage(buildBookingMessage(sampleBooking), {
+    fetchImpl,
+    storage: fakeStorage(),
+    settings: { recipient: 'o@example.com', cc: [], disabledChannels: [], webhookUrl: 'not-a-url' },
+    ...fast,
+  });
+  assert.equal(report.state, DELIVERY_STATES.delivered);
+  assert.equal(report.channel, 'formsubmit');
+  assert.equal(report.attempts[0].skipped, true);
+});
+
+test('isHttpUrl only accepts https (and local dev) endpoints', () => {
+  ['https://script.google.com/macros/s/x/exec', 'https://hooks.zapier.com/hooks/catch/1/2', 'http://localhost:8787/hook'].forEach(
+    (value) => assert.ok(isHttpUrl(value), `accepts ${value}`),
+  );
+  ['', 'not-a-url', 'ftp://example.com', 'javascript:alert(1)', 'http://example.com/hook'].forEach((value) =>
+    assert.ok(!isHttpUrl(value), `rejects ${value}`),
+  );
+});
+
+test('the personal relay is remembered per browser through settings', () => {
+  const storage = fakeStorage();
+  saveMailSettings({ webhookUrl: 'https://script.google.com/macros/s/abc/exec', webhookSecret: 's3cret', web3formsKey: 'key-1' }, storage);
+  const saved = getMailSettings(storage);
+  assert.equal(saved.webhookUrl, 'https://script.google.com/macros/s/abc/exec');
+  assert.equal(saved.webhookSecret, 's3cret');
+  assert.equal(saved.web3formsKey, 'key-1');
+
+  saveMailSettings({ webhookUrl: 'http://evil.example.com/hook' }, storage);
+  assert.equal(getMailSettings(storage).webhookUrl, '', 'plain http relays are refused');
+});
+
+test('channel priority is own relay, server relay, FormSubmit, Web3Forms', () => {
+  assert.deepEqual(CHANNEL_ORDER, ['webhook', 'backend', 'formsubmit', 'web3forms']);
 });

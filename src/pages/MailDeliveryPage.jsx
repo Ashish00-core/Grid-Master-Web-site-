@@ -20,6 +20,8 @@ import {
   sendViaBackend,
   sendViaFormSubmit,
   sendViaWeb3Forms,
+  sendViaWebhook,
+  isHttpUrl,
   getMailSettings,
   saveMailSettings,
   resetMailSettings,
@@ -32,6 +34,7 @@ import {
 } from '../lib/mailDelivery';
 
 const CHANNEL_TESTERS = {
+  webhook: sendViaWebhook,
   backend: sendViaBackend,
   formsubmit: sendViaFormSubmit,
   web3forms: sendViaWeb3Forms,
@@ -68,6 +71,9 @@ export default function MailDeliveryPage() {
   const [settings, setSettings] = useState(() => getMailSettings());
   const [recipientDraft, setRecipientDraft] = useState(() => getMailSettings().recipient);
   const [ccDraft, setCcDraft] = useState(() => getMailSettings().cc.join(', '));
+  const [relayDraft, setRelayDraft] = useState(() => getMailSettings().webhookUrl);
+  const [relaySecretDraft, setRelaySecretDraft] = useState(() => getMailSettings().webhookSecret);
+  const [web3formsDraft, setWeb3formsDraft] = useState(() => getMailSettings().web3formsKey);
   const [savedNote, setSavedNote] = useState('');
   const [isTesting, setIsTesting] = useState(false);
   const [testResults, setTestResults] = useState(null);
@@ -106,8 +112,18 @@ export default function MailDeliveryPage() {
       flash(`"${invalidCc}" is not a valid CC address — nothing was saved.`);
       return;
     }
+    if (relayDraft.trim() && !isHttpUrl(relayDraft.trim())) {
+      flash('The personal relay must be an https:// URL (the one Google Apps Script gives you ends with /exec).');
+      return;
+    }
 
-    const next = saveMailSettings({ recipient: recipientDraft.trim(), cc: ccList });
+    const next = saveMailSettings({
+      recipient: recipientDraft.trim(),
+      cc: ccList,
+      webhookUrl: relayDraft.trim(),
+      webhookSecret: relaySecretDraft.trim(),
+      web3formsKey: web3formsDraft.trim(),
+    });
     setSettings(next);
     flash(`Saved on this device — bookings now go to ${resolveRecipient(next)}.`);
   };
@@ -117,6 +133,9 @@ export default function MailDeliveryPage() {
     setSettings(next);
     setRecipientDraft('');
     setCcDraft('');
+    setRelayDraft('');
+    setRelaySecretDraft('');
+    setWeb3formsDraft('');
     flash(`Reset to the default inbox ${COMPANY_INFO.email}.`);
   };
 
@@ -243,7 +262,11 @@ export default function MailDeliveryPage() {
                 </span>
                 <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-950 border border-slate-800 text-slate-300">
                   <ServerCog className="w-3.5 h-3.5 text-amber-400" />
-                  {backendLikelyAvailable ? 'Server relay enabled' : 'FormSubmit only'}
+                  {settings.webhookUrl
+                    ? 'Own e-mail relay active'
+                    : backendLikelyAvailable
+                      ? 'Server relay enabled'
+                      : 'FormSubmit relay only'}
                 </span>
               </div>
             </div>
@@ -275,6 +298,38 @@ export default function MailDeliveryPage() {
                   />
                 </label>
               </div>
+              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className="text-xs text-slate-300">
+                  Personal relay URL — own Gmail / Zapier / Make (most reliable)
+                  <input
+                    type="url"
+                    value={relayDraft}
+                    onChange={(event) => setRelayDraft(event.target.value)}
+                    placeholder="https://script.google.com/macros/s/…/exec"
+                    className="mt-1 w-full py-2.5 px-3 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-xs font-mono focus:border-amber-500 focus:outline-none"
+                  />
+                </label>
+                <label className="text-xs text-slate-300">
+                  Shared secret (optional, must match the script)
+                  <input
+                    type="text"
+                    value={relaySecretDraft}
+                    onChange={(event) => setRelaySecretDraft(event.target.value)}
+                    placeholder="any long random text"
+                    className="mt-1 w-full py-2.5 px-3 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-xs font-mono focus:border-amber-500 focus:outline-none"
+                  />
+                </label>
+                <label className="text-xs text-slate-300 sm:col-span-2">
+                  Web3Forms access key (optional extra backup relay)
+                  <input
+                    type="text"
+                    value={web3formsDraft}
+                    onChange={(event) => setWeb3formsDraft(event.target.value)}
+                    placeholder="paste the free access key from web3forms.com"
+                    className="mt-1 w-full py-2.5 px-3 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-xs font-mono focus:border-amber-500 focus:outline-none"
+                  />
+                </label>
+              </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 <button
                   onClick={handleSaveSettings}
@@ -290,8 +345,9 @@ export default function MailDeliveryPage() {
                 </button>
               </div>
               <p className="text-[11px] text-slate-500 mt-2">
-                Tip: set your personal address here, press “Run live delivery test”, and you will see exactly
-                what the server answers — without touching the live site configuration.
+                Everything here is stored only in this browser, so you can test safely. With a personal relay
+                URL set, bookings are e-mailed from <strong className="text-slate-300">your own Gmail</strong>{" "}
+                and no third-party activation is ever needed — see the setup steps below.
               </p>
             </details>
 

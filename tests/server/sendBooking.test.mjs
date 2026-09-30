@@ -31,7 +31,9 @@ const providerEnv = {
 };
 
 function setEnv(env) {
-  ['MAIL_PROVIDER', 'MAIL_API_KEY', 'MAIL_FROM', 'MAIL_TO', 'MAIL_CC'].forEach((key) => delete process.env[key]);
+  ['MAIL_PROVIDER', 'MAIL_API_KEY', 'MAIL_FROM', 'MAIL_TO', 'MAIL_CC', 'MAIL_WEBHOOK_URL', 'MAIL_WEBHOOK_SECRET'].forEach(
+    (key) => delete process.env[key],
+  );
   Object.assign(process.env, env);
 }
 
@@ -169,6 +171,52 @@ test('Brevo receives sender, recipients and reply-to', async () => {
   assert.equal(calls[0].init.headers['api-key'], 'test-key');
   assert.equal(calls[0].body.sender.email, 'bookings@gridmaster.test');
   assert.equal(calls[0].body.to[0].email, DEFAULT_RECIPIENT);
+});
+
+test('the webhook provider posts to the owner relay (Apps Script / Zapier)', async () => {
+  setEnv({
+    MAIL_PROVIDER: 'webhook',
+    MAIL_WEBHOOK_URL: 'https://script.google.com/macros/s/AKfycb/exec',
+    MAIL_WEBHOOK_SECRET: 'shared-secret',
+  });
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), init, body: JSON.parse(init.body) });
+    return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true, detail: 'Delivered from Gmail' }) };
+  };
+
+  const cfg = readProviderConfig(process.env);
+  assert.equal(cfg.configured, true);
+  const result = await sendWithProvider(validatePayload(validPayload).value, cfg);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.provider, 'webhook');
+  assert.equal(calls[0].url, 'https://script.google.com/macros/s/AKfycb/exec');
+  assert.equal(calls[0].init.headers['Content-Type'], 'text/plain;charset=utf-8');
+  assert.equal(calls[0].body.secret, 'shared-secret');
+  assert.equal(calls[0].body.to, DEFAULT_RECIPIENT);
+  assert.equal(calls[0].body.replyTo, 'meera@example.com');
+});
+
+test('a webhook relay that reports an error is not counted as delivered', async () => {
+  setEnv({ MAIL_PROVIDER: 'webhook', MAIL_WEBHOOK_URL: 'https://example.com/hook' });
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 500,
+    text: async () => JSON.stringify({ ok: false, detail: 'Script error' }),
+  });
+
+  const cfg = readProviderConfig(process.env);
+  const result = await sendWithProvider(validatePayload(validPayload).value, cfg);
+  assert.equal(result.ok, false);
+  assert.match(result.detail, /Script error/);
+});
+
+test('the webhook provider needs a valid https URL', () => {
+  setEnv({ MAIL_PROVIDER: 'webhook' });
+  assert.match(readProviderConfig(process.env).reason, /MAIL_WEBHOOK_URL/);
+  setEnv({ MAIL_PROVIDER: 'webhook', MAIL_WEBHOOK_URL: 'http://insecure.example.com/hook' });
+  assert.equal(readProviderConfig(process.env).configured, false);
 });
 
 test('provider errors are reported instead of swallowed', async () => {

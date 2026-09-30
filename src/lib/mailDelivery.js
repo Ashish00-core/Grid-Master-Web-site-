@@ -43,17 +43,33 @@ export const MAIL_CONFIG = {
   backendEndpoint: buildEnv.VITE_MAIL_ENDPOINT || '/api/send-booking',
   /** Set VITE_MAIL_BACKEND=off to skip the serverless channel entirely. */
   backendEnabled: buildEnv.VITE_MAIL_BACKEND !== 'off',
+  /**
+   * Personal relay (webhook) — the most reliable option because it is the
+   * owner's own endpoint. Works with a Google Apps Script web app (mail sent
+   * straight from your own Gmail), Zapier, Make, n8n, a Cloudflare Worker, …
+   * It can also be pasted at runtime in the Mail Delivery Center.
+   */
+  webhookUrl: buildEnv.VITE_MAIL_WEBHOOK_URL || '',
+  webhookSecret: buildEnv.VITE_MAIL_WEBHOOK_SECRET || '',
   /** Optional Web3Forms public access key. */
   web3formsKey: buildEnv.VITE_WEB3FORMS_KEY || '',
   formSubmitEndpoint: 'https://formsubmit.co/ajax/',
   web3formsEndpoint: 'https://api.web3forms.com/submit',
   /** Abort a channel that hangs instead of freezing the booking form. */
   timeoutMs: 20000,
+  /** Pause before a retry (network hiccups are usually transient). */
+  retryDelayMs: 700,
   /** Maximum queued messages kept on the device. */
   outboxLimit: 25,
 };
 
 export const CHANNELS = {
+  webhook: {
+    id: 'webhook',
+    label: 'Own mail relay (your Gmail / webhook)',
+    short: 'Own relay',
+    hint: 'Google Apps Script, Zapier, Make or any webhook — mails are sent from your own account.',
+  },
   backend: {
     id: 'backend',
     label: 'Company mail server',
@@ -64,7 +80,7 @@ export const CHANNELS = {
     id: 'formsubmit',
     label: 'FormSubmit relay',
     short: 'FormSubmit',
-    hint: 'Free relay used by this website. Needs a one-time activation e-mail.',
+    hint: 'Free relay used by this website. Some ad-blockers and strict privacy modes block it.',
   },
   web3forms: {
     id: 'web3forms',
@@ -73,6 +89,9 @@ export const CHANNELS = {
     hint: 'Backup relay, active only when an access key is configured.',
   },
 };
+
+/** Channels are tried in this order — the owner's own relay first. */
+export const CHANNEL_ORDER = ['webhook', 'backend', 'formsubmit', 'web3forms'];
 
 export const MAIL_SETTINGS_KEY = 'grid-master-mail-settings-v1';
 export const OUTBOX_KEY = 'grid-master-mail-outbox-v1';
@@ -119,6 +138,18 @@ export function isValidEmail(value) {
   return /^[^\s@,;:<>()[\]\\]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/.test(email) && email.length <= 254;
 }
 
+/** Accepts https:// relays (and http:// for local dev servers only). */
+export function isHttpUrl(value) {
+  if (typeof value !== 'string') return false;
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol === 'https:') return true;
+    return url.protocol === 'http:' && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
 export const digitsOnly = (value = '') => String(value).replace(/[^\d]/g, '');
 
 export const whatsappHref = (text, phone = COMPANY_INFO.directPhone) =>
@@ -135,9 +166,13 @@ export function getMailSettings(storage = getStorage()) {
   const recipient = typeof raw.recipient === 'string' ? raw.recipient.trim() : '';
   const cc = Array.isArray(raw.cc) ? raw.cc : [];
   const disabledChannels = Array.isArray(raw.disabledChannels) ? raw.disabledChannels : [];
+  const webhookUrl = typeof raw.webhookUrl === 'string' ? raw.webhookUrl.trim() : '';
   return {
     recipient: isValidEmail(recipient) ? recipient : '',
     cc: cc.filter(isValidEmail).map((entry) => entry.trim()),
+    webhookUrl: isHttpUrl(webhookUrl) ? webhookUrl : '',
+    webhookSecret: typeof raw.webhookSecret === 'string' ? raw.webhookSecret.trim() : '',
+    web3formsKey: typeof raw.web3formsKey === 'string' ? raw.web3formsKey.trim() : '',
     disabledChannels,
   };
 }
@@ -379,19 +414,83 @@ export function clearDeliveryLog(storage = getStorage()) {
 
 /* ------------------------------------------------------------------ *
  * Transport primitives
- * ------------------------------------------------------------------ */
+ * ------------------------------------------------------------------ *
+ * A JSON POST with `Content-Type: application/json` forces the browser to send
+ * a CORS preflight (OPTIONS) request first. Ad-blockers, strict privacy modes
+ * and flaky relay edges all break that preflight, which surfaces in the browser
+ * as "Failed to fetch" — the exact error that stopped bookings from being
+ * delivered. `multipart/form-data` and `text/plain` are CORS-*simple* content
+ * types: they are sent straight away with no preflight, so they survive those
+ * environments. Every relay therefore gets a simple transport first, a JSON
+ * transport second, and transient failures are retried automatically.
+ */
 
-async function postJSON(url, payload, { fetchImpl, timeoutMs = MAIL_CONFIG.timeoutMs, headers = {} } = {}) {
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export const isTransientNetworkError = (error) =>
+  !error ||
+  error.name === 'AbortError' ||
+  error.name === 'TypeError' ||
+  /failed to fetch|networkerror|load failed|network request failed/i.test(String(error.message || ''));
+
+function describeNetworkError(error, timeoutMs) {
+  if (error?.name === 'AbortError') {
+    return `No answer from the relay within ${Math.round(timeoutMs / 1000)}s (the request was cancelled).`;
+  }
+  const raw = String(error?.message || error || 'unknown error');
+  if (/failed to fetch|networkerror|load failed|network request failed/i.test(raw)) {
+    return 'The browser could not reach the relay — this is usually an ad-blocker / strict privacy extension blocking it, a captive or filtered network, or a CORS preflight the relay refused.';
+  }
+  return raw;
+}
+
+/**
+ * Perform one HTTP POST using the requested transport.
+ *
+ * @param {'formdata'|'json'|'text'|'nocors'} transport
+ * @returns {Promise<{ok, status, data, detail, rawError, retryable, opaque}>}
+ */
+async function sendRequest(url, payload, {
+  fetchImpl,
+  transport = 'json',
+  timeoutMs = MAIL_CONFIG.timeoutMs,
+  headers = {},
+} = {}) {
   const doFetch = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
-  if (!doFetch) return { ok: false, status: 0, detail: 'Network requests are unavailable in this browser.' };
+  if (!doFetch) {
+    return { ok: false, status: 0, retryable: false, detail: 'Network requests are unavailable in this browser.' };
+  }
+
+  const init = { method: 'POST' };
+
+  if (transport === 'formdata') {
+    const FormDataImpl = typeof FormData !== 'undefined' ? FormData : null;
+    if (!FormDataImpl) {
+      return { ok: false, status: 0, retryable: false, detail: 'This browser cannot build form data.' };
+    }
+    const form = new FormDataImpl();
+    Object.entries(payload).forEach(([key, value]) => {
+      if (value === undefined || value === null) return;
+      form.append(key, typeof value === 'string' ? value : JSON.stringify(value));
+    });
+    init.body = form;
+    // Never set Content-Type manually: the browser adds the multipart boundary.
+    init.headers = { Accept: 'application/json', ...headers };
+  } else if (transport === 'text') {
+    init.body = JSON.stringify(payload);
+    init.headers = { 'Content-Type': 'text/plain;charset=utf-8', Accept: 'application/json', ...headers };
+  } else {
+    init.body = JSON.stringify(payload);
+    init.headers = { 'Content-Type': 'application/json', Accept: 'application/json', ...headers };
+  }
+
+  if (transport === 'nocors') {
+    // Fire-and-forget: needed by relays that do not answer CORS preflights.
+    init.mode = 'no-cors';
+    delete init.headers;
+  }
 
   let timer;
-  const init = {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...headers },
-    body: JSON.stringify(payload),
-  };
-
   if (typeof AbortController !== 'undefined') {
     const controller = new AbortController();
     init.signal = controller.signal;
@@ -400,24 +499,36 @@ async function postJSON(url, payload, { fetchImpl, timeoutMs = MAIL_CONFIG.timeo
 
   try {
     const response = await doFetch(url, init);
+    if (transport === 'nocors') {
+      return {
+        ok: true,
+        opaque: true,
+        status: 0,
+        data: null,
+        detail: 'Request accepted by the relay (this relay type does not allow the browser to read the answer).',
+      };
+    }
     let data = null;
     try {
       data = await response.json();
     } catch {
       data = null;
     }
-    return { ok: true, status: response.status, data, httpOk: response.ok };
+    return {
+      ok: true,
+      status: response.status,
+      httpOk: response.ok,
+      data,
+      detail: `HTTP ${response.status}`,
+    };
   } catch (error) {
-    const aborted = error?.name === 'AbortError';
+    const transient = isTransientNetworkError(error);
     return {
       ok: false,
       status: 0,
-      data: null,
-      detail: aborted
-        ? `No answer from the mail relay within ${Math.round(timeoutMs / 1000)}s.`
-        : error?.message === 'Failed to fetch' || error?.name === 'TypeError'
-          ? 'The browser could not reach the mail relay (offline, blocked by an ad-blocker, or cross-origin request refused).'
-          : error?.message || 'Unknown network error.',
+      retryable: transient,
+      rawError: String(error?.message || error || 'network error'),
+      detail: describeNetworkError(error, timeoutMs),
     };
   } finally {
     if (timer) clearTimeout(timer);
@@ -426,29 +537,93 @@ async function postJSON(url, payload, { fetchImpl, timeoutMs = MAIL_CONFIG.timeo
 
 const isTruthy = (value) => value === true || value === 'true' || value === 1 || value === '1';
 
+const SKIP = (detail) => ({ ok: false, skipped: true, detail });
+
+function looksLikeActivation(message) {
+  return /activ/i.test(message || '');
+}
+
 /* ------------------------------------------------------------------ *
  * Channels
  * ------------------------------------------------------------------ */
 
 /**
- * The serverless endpoint of this website. It reports `configured:false`
- * (HTTP 501) when no provider API key is set, which simply means "skip me".
+ * Channel 1 — the owner's own relay (highest priority once configured).
+ * Works with a Google Apps Script web app (mail is sent from your own Gmail),
+ * Zapier / Make / n8n catch hooks, a Cloudflare Worker, …
+ */
+export async function sendViaWebhook(message, options = {}) {
+  const settings = options.settings || getMailSettings(options.storage);
+  const url = options.webhookUrl || settings.webhookUrl || MAIL_CONFIG.webhookUrl;
+  if (!url) return SKIP('No personal relay configured yet — using the built-in relays below.');
+  if (!isHttpUrl(url)) return SKIP('The personal relay URL is not a valid https:// address — ignoring it.');
+
+  const payload = {
+    secret: settings.webhookSecret || MAIL_CONFIG.webhookSecret || undefined,
+    to: resolveRecipient(settings),
+    cc: resolveCc(settings),
+    subject: message.subject,
+    text: message.text,
+    html: message.html,
+    fields: message.fields,
+    replyTo: isValidEmail(options.replyTo || '') ? options.replyTo : undefined,
+    source: 'grid-master-website',
+  };
+
+  // `text/plain` keeps the request CORS-simple (Apps Script cannot answer a
+  // preflight) while still allowing us to read the JSON answer.
+  let result = await sendRequest(url, payload, { ...options, transport: 'text' });
+  if (!result.ok && result.retryable) {
+    // Last resort for relays that only accept opaque requests.
+    const opaque = await sendRequest(url, payload, { ...options, transport: 'nocors' });
+    if (opaque.ok) {
+      return { ok: true, opaque: true, status: 0, detail: opaque.detail };
+    }
+    result = opaque.ok ? opaque : result;
+  }
+
+  if (!result.ok) return { ok: false, status: result.status, detail: result.detail, rawError: result.rawError };
+  if (result.opaque) return { ok: true, opaque: true, status: result.status, detail: result.detail };
+
+  const data = result.data || {};
+  const reported = data.detail || data.message || '';
+
+  if (isTruthy(data.ok) || isTruthy(data.success)) {
+    return {
+      ok: true,
+      status: result.status,
+      detail: reported || `Accepted by your relay (HTTP ${result.status}).`,
+      raw: reported,
+    };
+  }
+  if (data.ok === false || isTruthy(data.error)) {
+    return { ok: false, status: result.status, detail: reported || 'Your relay reported an error.' };
+  }
+  if (result.httpOk === false) {
+    return { ok: false, status: result.status, detail: reported || `Your relay answered HTTP ${result.status}.` };
+  }
+  // A 2xx answer without JSON means the relay accepted the message.
+  return { ok: true, status: result.status, detail: reported || result.detail || 'Accepted by your relay.', raw: reported };
+}
+
+/**
+ * Channel 2 — the serverless endpoint of this website. It reports
+ * `configured:false` (HTTP 501) when no provider API key is set, which simply
+ * means "skip me".
  */
 export async function sendViaBackend(message, options = {}) {
   const { fetchImpl, storage = getStorage(), settings } = options;
-  if (!MAIL_CONFIG.backendEnabled) {
-    return { ok: false, skipped: true, detail: 'Server relay disabled in this build.' };
-  }
+  if (!MAIL_CONFIG.backendEnabled) return SKIP('Server relay disabled in this build.');
   if (typeof window !== 'undefined' && window.location?.protocol === 'file:') {
-    return { ok: false, skipped: true, detail: 'The website is open as a local file, so the server relay is unavailable.' };
+    return SKIP('The website is open as a local file, so the server relay is unavailable.');
   }
 
   const cached = readJSON(storage, BACKEND_PROBE_KEY, null);
   if (cached && cached.available === false && Date.now() - (cached.at || 0) < 6 * 60 * 60 * 1000) {
-    return { ok: false, skipped: true, detail: 'Server relay not deployed — using the FormSubmit relay.' };
+    return SKIP('Server relay is not available for this deployment — using the relays below.');
   }
 
-  const result = await postJSON(
+  const result = await sendRequest(
     MAIL_CONFIG.backendEndpoint,
     {
       to: resolveRecipient(settings),
@@ -459,36 +634,27 @@ export async function sendViaBackend(message, options = {}) {
       fields: message.fields,
       replyTo: isValidEmail(options.replyTo || '') ? options.replyTo : undefined,
     },
-    { fetchImpl, timeoutMs: options.timeoutMs },
+    { fetchImpl, timeoutMs: options.timeoutMs, transport: 'json' },
   );
 
   const data = result.data || {};
-  const available = result.ok && ![404, 405, 501].includes(result.status);
-  writeJSON(storage, BACKEND_PROBE_KEY, { available, at: Date.now() });
+  const unavailable = !result.ok || [404, 405, 501].includes(result.status) || data.configured === false;
+  writeJSON(storage, BACKEND_PROBE_KEY, { available: !unavailable, at: Date.now() });
 
   if (!result.ok) return { ok: false, detail: result.detail, status: result.status };
-  if ([404, 405, 501].includes(result.status) || data.configured === false) {
-    return {
-      ok: false,
-      skipped: true,
-      detail: data.detail || 'Server relay is not configured yet — using the FormSubmit relay.',
-      status: result.status,
-    };
+  if (unavailable) {
+    return SKIP(data.detail || 'Server relay is not configured yet — using the relays below.');
   }
-  if (data.ok) return { ok: true, detail: data.detail || `Delivered by the company mail server (${data.provider || 'API'}).` };
-
-  return {
-    ok: false,
-    status: result.status,
-    detail: data.detail || `Server relay rejected the message (HTTP ${result.status}).`,
-  };
+  if (data.ok) {
+    return { ok: true, detail: data.detail || `Delivered by the company mail server (${data.provider || 'API'}).` };
+  }
+  return { ok: false, status: result.status, detail: data.detail || `Server relay rejected the message (HTTP ${result.status}).` };
 }
 
-/** FormSubmit relay — free, but the recipient inbox must be activated once. */
-export async function sendViaFormSubmit(message, options = {}) {
-  const recipient = resolveRecipient(options.settings);
-  const cc = resolveCc(options.settings);
-
+/** Build the exact field set FormSubmit expects. */
+export function buildFormSubmitPayload(message, options = {}) {
+  const settings = options.settings || getMailSettings(options.storage);
+  const cc = resolveCc(settings);
   const payload = {
     _subject: message.subject,
     _template: 'table',
@@ -500,64 +666,103 @@ export async function sendViaFormSubmit(message, options = {}) {
   // FormSubmit only honours _replyto when the payload carries an `email` field,
   // and a malformed value there would make the relay reject the whole message.
   if (!isValidEmail(payload.email)) delete payload.email;
+  return payload;
+}
 
-  const result = await postJSON(`${MAIL_CONFIG.formSubmitEndpoint}${encodeURIComponent(recipient)}`, payload, options);
-  if (!result.ok) return { ok: false, status: result.status, raw: result.detail, detail: result.detail };
-
+async function attemptFormSubmit(url, payload, options, transport) {
+  const result = await sendRequest(url, payload, { ...options, transport });
+  if (!result.ok) {
+    return { ok: false, retryable: Boolean(result.retryable), status: result.status, detail: result.detail, rawError: result.rawError };
+  }
   const data = result.data || {};
   const detail = String(data.message || '').trim();
 
   if (isTruthy(data.success)) {
-    return { ok: true, status: result.status, raw: detail || 'Relay accepted the message.', detail: detail || 'Relay accepted the message.' };
+    return { ok: true, status: result.status, detail: detail || 'Relay accepted the message.', raw: detail };
   }
-
-  if (/activ/i.test(detail)) {
+  if (looksLikeActivation(detail)) {
     return {
       ok: false,
-      status: result.status,
+      retryable: false,
       activationRequired: true,
+      status: result.status,
       raw: detail,
-      detail:
-        detail ||
-        'FormSubmit needs a one-time activation for this inbox before it forwards anything.',
+      detail: detail || 'FormSubmit needs a one-time activation for this inbox before it forwards anything.',
     };
   }
-
   return {
     ok: false,
+    retryable: false,
     status: result.status,
     raw: detail || `HTTP ${result.status}`,
     detail:
       detail ||
-      `The relay answered HTTP ${result.status}. ${
-        /web server|HTML files/i.test(detail) ? 'Open the website through its https:// address (not as a local file).' : ''
-      }`.trim(),
+      `The relay answered HTTP ${result.status}.${
+        /web server|HTML files/i.test(detail) ? ' Open the website through its https:// address (not as a local file).' : ''
+      }`,
   };
 }
 
-/** Web3Forms relay — used only when a public access key was configured. */
-export async function sendViaWeb3Forms(message, options = {}) {
-  // (relay always delivers to the key owner — settings only affect the reply-to)
-  if (!MAIL_CONFIG.web3formsKey) {
-    return { ok: false, skipped: true, detail: 'No Web3Forms access key configured.' };
+/**
+ * Channel 3 — FormSubmit relay. Tried with a preflight-free multipart POST
+ * first, then as JSON, each retried once when the network hiccups.
+ */
+export async function sendViaFormSubmit(message, options = {}) {
+  const recipient = resolveRecipient(options.settings);
+  const payload = buildFormSubmitPayload(message, options);
+  const url = `${MAIL_CONFIG.formSubmitEndpoint}${encodeURIComponent(recipient)}`;
+
+  // Transport ladder: preflight-free multipart, then JSON, then one last
+  // multipart retry in case the network hiccuped. At most three requests, so a
+  // booking can never be e-mailed twice in quick succession.
+  const transports = options.transports || ['formdata', 'json', 'formdata'];
+  const retryDelayMs = options.retryDelayMs ?? MAIL_CONFIG.retryDelayMs;
+  const attempts = [];
+  let last = null;
+
+  for (let index = 0; index < transports.length; index += 1) {
+    const transport = transports[index];
+    last = await attemptFormSubmit(url, payload, options, transport);
+    attempts.push({ transport, ...last });
+    if (last.ok || last.activationRequired || !last.retryable) break;
+    if (transports[index + 1]) await delay(retryDelayMs);
   }
-  const result = await postJSON(
+
+  const activation = attempts.find((entry) => entry.activationRequired);
+  if (activation) return { ok: false, status: activation.status, activationRequired: true, raw: activation.raw, detail: activation.detail, attempts };
+  if (last?.ok) return { ok: true, status: last.status, raw: last.raw, detail: last.detail, attempts };
+  return {
+    ok: false,
+    status: last?.status ?? 0,
+    raw: last?.raw || last?.rawError || '',
+    detail: last?.detail || 'The relay could not be reached.',
+    attempts,
+  };
+}
+
+/** Channel 4 — Web3Forms relay (only when an access key is configured). */
+export async function sendViaWeb3Forms(message, options = {}) {
+  const settings = options.settings || getMailSettings(options.storage);
+  const accessKey = options.web3formsKey || settings.web3formsKey || MAIL_CONFIG.web3formsKey;
+  if (!accessKey) return SKIP('No Web3Forms access key configured.');
+
+  const result = await sendRequest(
     MAIL_CONFIG.web3formsEndpoint,
     {
-      access_key: MAIL_CONFIG.web3formsKey,
+      access_key: accessKey,
       subject: message.subject,
       from_name: 'Grid Master Website',
       ...(isValidEmail(options.replyTo || '') ? { replyto: options.replyTo } : {}),
       ...message.fields,
       message: message.text,
     },
-    options,
+    { ...options, transport: 'json' },
   );
 
   if (!result.ok) return { ok: false, status: result.status, detail: result.detail };
   const data = result.data || {};
   if (isTruthy(data.success)) {
-    return { ok: true, status: result.status, raw: data.message || 'Relay accepted the message.', detail: data.message || 'Relay accepted the message.' };
+    return { ok: true, status: result.status, raw: data.message || 'Relay accepted the message.', detail: data.message || 'Accepted by Web3Forms.' };
   }
   return {
     ok: false,
@@ -568,6 +773,7 @@ export async function sendViaWeb3Forms(message, options = {}) {
 }
 
 const CHANNEL_SENDERS = {
+  webhook: sendViaWebhook,
   backend: sendViaBackend,
   formsubmit: sendViaFormSubmit,
   web3forms: sendViaWeb3Forms,
@@ -596,9 +802,7 @@ export async function deliverMessage(message, options = {}) {
   const disabled = new Set(settings.disabledChannels || []);
   const attempts = [];
 
-  const order = ['backend', 'formsubmit', 'web3forms'].filter(
-    (id) => !disabled.has(id) && CHANNEL_SENDERS[id],
-  );
+  const order = CHANNEL_ORDER.filter((id) => !disabled.has(id) && CHANNEL_SENDERS[id]);
 
   for (const id of order) {
     const outcome = await CHANNEL_SENDERS[id](message, { ...options, storage, settings });
@@ -607,8 +811,10 @@ export async function deliverMessage(message, options = {}) {
       label: CHANNELS[id].label,
       ok: Boolean(outcome.ok),
       skipped: Boolean(outcome.skipped),
+      opaque: Boolean(outcome.opaque),
       activationRequired: Boolean(outcome.activationRequired),
       detail: outcome.detail || (outcome.ok ? 'Sent.' : 'Failed.'),
+      raw: outcome.raw || outcome.rawError || '',
       status: outcome.status ?? null,
       at: new Date().toISOString(),
     });
