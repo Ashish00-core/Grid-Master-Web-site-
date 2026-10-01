@@ -2,6 +2,16 @@
   command = "npm run build"
   publish = "dist"
 
+# The booking mail relay (optional — see docs/booking-email-setup.md).
+functions = "netlify/functions"
+
+# Let the browser reach the relay through the same /api/booking path that
+# Vercel uses, so one code path works on both hosts.
+[[redirects]]
+  from = "/api/booking"
+  to = "/.netlify/functions/booking"
+  status = 200
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

@@ -1,9 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X, Calendar, Clock, CheckCircle2, User, Phone, Mail,
-  MapPin, Home, Building2, Sun, ShieldCheck, Send, Download, Copy, Check, Loader2, FileText, AlertTriangle, MessageCircle
+  MapPin, Home, Building2, Sun, ShieldCheck, Send, Download, Copy, Check, Loader2, FileText, AlertTriangle, MessageCircle, RefreshCw, ChevronDown, ExternalLink
 } from 'lucide-react';
 import { COMPANY_INFO, CURRENCY } from '../data/solarData';
+import {
+  DELIVERY,
+  buildBookingPayload,
+  deliverBooking,
+  enqueueBooking,
+  dequeueBooking,
+  makeReference,
+} from '../lib/bookingMail';
 
 const STANDARD_SERVICES = [
   "Solar Designing & 3D Simulation",
@@ -25,7 +33,11 @@ const TIME_SLOTS = [
   "04:00 PM - 06:00 PM",
 ];
 
-const toISODate = (d) => d.toISOString().split("T")[0];
+const toISODate = (d) => {
+  // Local calendar date — toISOString() would shift the day for IST users.
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
 
 const getMinDate = () => toISODate(new Date());
 const getDefaultDate = () => {
@@ -41,9 +53,7 @@ const getMaxDate = () => {
 
 export default function BookingModal({ isOpen, onClose, initialService = "", quoteItems = [] }) {
   const [purpose, setPurpose] = useState("home"); // 'home' or 'building'
-  const [serviceType, setServiceType] = useState(
-    initialService || STANDARD_SERVICES[0]
-  );
+  const [serviceType, setServiceType] = useState(initialService || STANDARD_SERVICES[0]);
   const [preferredEngineer, setPreferredEngineer] = useState("g-gowtham");
   const [date, setDate] = useState(getDefaultDate());
   const [timeSlot, setTimeSlot] = useState(TIME_SLOTS[0]);
@@ -54,10 +64,13 @@ export default function BookingModal({ isOpen, onClose, initialService = "", quo
   const [notes, setNotes] = useState("");
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isRetrying, setIsRetrying] = useState(false);
   const [bookingConfirmed, setBookingConfirmed] = useState(false);
   const [bookingRef, setBookingRef] = useState("");
-  const [dispatchStatus, setDispatchStatus] = useState("sent"); // 'sent' | 'unconfirmed'
+  const [delivery, setDelivery] = useState(null); // { ok, state, channel, message, attempts }
+  const [showDetails, setShowDetails] = useState(false);
   const [copied, setCopied] = useState(false);
+  const submittedPayload = useRef(null);
 
   // Keep the pre-filled service in sync every time the modal (re)opens
   useEffect(() => {
@@ -91,10 +104,13 @@ export default function BookingModal({ isOpen, onClose, initialService = "", quo
     setDate(getDefaultDate());
     setTimeSlot(TIME_SLOTS[0]);
     setCopied(false);
+    setShowDetails(false);
+    setDelivery(null);
+    submittedPayload.current = null;
     onClose();
   };
 
-  const handleCopy = (text, key = "copied") => {
+  const handleCopy = (text) => {
     const done = () => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
@@ -130,76 +146,83 @@ export default function BookingModal({ isOpen, onClose, initialService = "", quo
     0
   );
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-
-    const randomRef = "GM-SR-" + Math.floor(100000 + Math.random() * 900000);
-    setBookingRef(randomRef);
-
-    const targetEmail = COMPANY_INFO.email;
-    const leadEngineerName =
-      ENGINEER_OPTIONS.find((eng) => eng.value === preferredEngineer)?.label ||
-      ENGINEER_OPTIONS[0].label;
-
-    const bookingPayload = {
-      _subject: `New Solar Integration Booking [${randomRef}] - ${customerName}`,
-      _template: "table",
-      _replyto: customerEmail,
-      customer_name: customerName,
-      customer_phone: customerPhone,
-      property_location: propertyAddress,
-      purpose: purpose === "home" ? "Home (Residential)" : "Building (Commercial)",
-      service_required: serviceType,
-      lead_engineer: leadEngineerName,
-      scheduled_date: date,
-      time_slot: timeSlot,
-      notes: notes || "None provided",
-    };
-
-    if (quoteItems.length > 0) {
-      bookingPayload.selected_equipment = buildQuoteSummary();
-      bookingPayload.equipment_package_total = `${CURRENCY.formatINR(quoteTotalINR)} (≈ ${CURRENCY.formatUSD(quoteTotalUSD)})`;
-    }
-
-    let status = "sent";
-    try {
-      const res = await fetch("https://formsubmit.co/ajax/" + targetEmail, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify(bookingPayload),
-      });
-      const data = await res.json().catch(() => ({}));
-      const ok = res.ok && (data.success === true || data.success === "true");
-      status = ok ? "sent" : "unconfirmed";
-    } catch {
-      status = "unconfirmed";
-    }
-
-    // Brief loading state for a smooth UX
-    await new Promise((resolve) => setTimeout(resolve, 900));
-    setIsSubmitting(false);
-    setDispatchStatus(status);
-    setBookingConfirmed(true);
-  };
-
   const leadEngineerLabel = () =>
     ENGINEER_OPTIONS.find((eng) => eng.value === preferredEngineer)?.label ||
     ENGINEER_OPTIONS[0].label;
 
-  const handleCopyReceipt = () => {
+  const delivered = delivery?.ok === true;
+  const inbox = COMPANY_INFO.email;
+
+  /** Send (or re-send) whatever is currently in the form / last submitted. */
+  const dispatchBooking = async (payload, reference, { retry = false } = {}) => {
+    const result = await deliverBooking(payload, { inbox });
+    setDelivery(result);
+    if (result.ok) {
+      dequeueBooking(reference);
+    } else {
+      // Never lose a booking: keep it locally and re-send it automatically later.
+      enqueueBooking({
+        reference,
+        createdAt: new Date().toISOString(),
+        inbox,
+        payload,
+      });
+    }
+    if (retry) setIsRetrying(false);
+    return result;
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    const randomRef = makeReference();
+    setBookingRef(randomRef);
+
+    const payload = buildBookingPayload(
+      {
+        customerName,
+        customerPhone,
+        customerEmail,
+        propertyAddress,
+        purpose,
+        serviceType,
+        leadEngineer: leadEngineerLabel(),
+        date,
+        timeSlot,
+        notes,
+        quoteSummary: quoteItems.length > 0 ? buildQuoteSummary() : "",
+        quoteTotal:
+          quoteItems.length > 0
+            ? `${CURRENCY.formatINR(quoteTotalINR)} (≈ ${CURRENCY.formatUSD(quoteTotalUSD)})`
+            : "",
+      },
+      { reference: randomRef, inbox }
+    );
+
+    submittedPayload.current = payload;
+    await dispatchBooking(payload, randomRef);
+
+    setIsSubmitting(false);
+    setBookingConfirmed(true);
+  };
+
+  const handleRetryDelivery = async () => {
+    if (!submittedPayload.current) return;
+    setIsRetrying(true);
+    await dispatchBooking(submittedPayload.current, bookingRef, { retry: true });
+  };
+
+  /** Everything the visitor can paste into their own mail app. */
+  const buildReceiptText = () => {
+    const statusLine = delivered
+      ? `Sent to ${inbox} via the ${delivery?.channel === "server" ? "company mail relay" : "website mail relay"}`
+      : "Pending — please use the call / WhatsApp / e-mail buttons to confirm this booking";
     const quoteLines =
       quoteItems.length > 0
         ? `\nSELECTED EQUIPMENT:\n${buildQuoteSummary()}\nEquipment package total: ${CURRENCY.formatINR(quoteTotalINR)} (≈ ${CURRENCY.formatUSD(quoteTotalUSD)})`
         : "";
-    const statusLine =
-      dispatchStatus === "sent"
-        ? "Dispatched To: " + targetEmail
-        : "Needs confirmation - please call us to confirm your slot";
-    const text = `GRID MASTER SOLAR BOOKING RECEIPT
+    return `GRID MASTER SOLAR BOOKING RECEIPT
 ========================================
 Reference ID: ${bookingRef}
 Customer Name: ${customerName}
@@ -211,13 +234,14 @@ PROJECT SUMMARY:
 - Scope: ${purpose === "home" ? "Home (Residential)" : "Building (Commercial)"}
 - Service: ${serviceType}
 - Preferred Audit Date: ${date} at ${timeSlot}
-- Oversight: GANDHAMANENI GOUTHAM (Head Engineer)
+- Oversight: ${leadEngineerLabel()}
 ${quoteLines}
 - Status: ${statusLine}
 ========================================
 For assistance, contact Head Engineer G. Goutham at ${COMPANY_INFO.directPhone}.`;
-    handleCopy(text);
   };
+
+  const handleCopyReceipt = () => handleCopy(buildReceiptText());
 
   const handleDownloadReceipt = () => {
     const quoteLines =
@@ -259,22 +283,53 @@ Direct Phone  : ${COMPANY_INFO.directPhone}
 Company Email : ${COMPANY_INFO.email}
 Solar Designer: Ashish Kumar
 
-Status: ${
-  dispatchStatus === "sent"
-    ? `DISPATCHED TO ${targetEmail}`
-    : "PENDING CONFIRMATION - PLEASE CALL TO CONFIRM YOUR SLOT"
-}
+Mail status: ${
+      delivered
+        ? `DELIVERED TO ${inbox}`
+        : `NOT CONFIRMED - ${delivery?.message || "please reach us directly to confirm your slot"}`
+    }
 =====================================================`;
 
-    const blob = new Blob([receiptText], { type: "text/plain;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.setAttribute("download", `GridMaster_Booking_${bookingRef}.txt`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    // Some in-app browsers (Instagram / WhatsApp webviews) block Blob
+    // downloads — fall back to copying the receipt rather than doing nothing.
+    try {
+      const blob = new Blob([receiptText], { type: "text/plain;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `GridMaster_Booking_${bookingRef}.txt`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch {
+      handleCopy(receiptText);
+    }
+  };
+
+  /** A mail the customer can send from their own inbox — works with zero relays. */
+  const buildMailtoHref = () => {
+    const subject = `Solar Booking ${bookingRef} — ${customerName}`;
+    const body = buildReceiptText();
+    return `mailto:${inbox}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  };
+
+  const whatsappHref = `https://wa.me/917200745180?text=${encodeURIComponent(
+    `Hi Grid Master, I submitted a solar booking (Ref ${bookingRef}) for ${customerName}. Please confirm my slot: ${date} at ${timeSlot}.`
+  )}`;
+
+  const diagnosis = () => {
+    if (!delivery) return "";
+    switch (delivery.state) {
+      case DELIVERY.ACTIVATION:
+        return `The mail relay is waiting for a one-time activation of ${inbox} (an "Activate Form" e-mail from formsubmit.co). Your booking is saved here and will be re-sent automatically once that is done.`;
+      case DELIVERY.BLOCKED:
+        return "Your browser could not reach the mail relay — usually an ad-blocker, a privacy extension or a filtered network. Using desktop data / another browser, or the e-mail button below, delivers the same booking.";
+      case DELIVERY.OFFLINE:
+        return "You appear to be offline. The booking is stored on this device and is sent automatically the moment you are back online.";
+      default:
+        return delivery.message || "The mail relay did not accept the booking.";
+    }
   };
 
   if (!isOpen) return null;
@@ -319,7 +374,7 @@ Status: ${
             <p className="text-xs sm:text-sm text-slate-300 mt-1">
               Schedule an engineering site inspection and 3D solar layout consultation with{" "}
               <strong className="text-amber-400">Head Engineer GANDHAMANENI GOUTHAM</strong>. Your
-              request is sent to <strong className="text-amber-300">{COMPANY_INFO.email}</strong>{" "}
+              request is sent to <strong className="text-amber-300">{inbox}</strong>{" "}
               and our team calls you back within 24 hours.
             </p>
 
@@ -557,12 +612,12 @@ Status: ${
           <div className="text-center py-6 space-y-6 animate-in zoom-in-95 duration-300">
             <div
               className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto shadow-xl ${
-                dispatchStatus === "sent"
+                delivered
                   ? "bg-emerald-500/20 border-2 border-emerald-400 text-emerald-400 shadow-emerald-500/20"
                   : "bg-amber-500/20 border-2 border-amber-400 text-amber-400 shadow-amber-500/20"
               }`}
             >
-              {dispatchStatus === "sent" ? (
+              {delivered ? (
                 <CheckCircle2 className="w-12 h-12" />
               ) : (
                 <AlertTriangle className="w-12 h-12" />
@@ -574,20 +629,23 @@ Status: ${
                 Booking Reference: {bookingRef}
               </span>
               <h2 className="text-2xl sm:text-3xl font-black text-white mt-3">
-                {dispatchStatus === "sent"
+                {delivered
                   ? "Solar Booking Submitted Successfully!"
-                  : "Booking Received — One Step Left"}
+                  : "Booking Saved — Confirming Delivery"}
               </h2>
               <p className="text-xs sm:text-sm text-slate-300 mt-2 max-w-md mx-auto leading-relaxed">
                 Thank you, <strong className="text-white">{customerName}</strong>.{" "}
-                {dispatchStatus === "sent" ? (
+                {delivered ? (
                   <>
-                    Your request was sent to <strong className="text-amber-400">{COMPANY_INFO.email}</strong>.
+                    Your booking e-mail has been delivered to{" "}
+                    <strong className="text-amber-400">{inbox}</strong>. Our team will call you
+                    within 24 hours.
                   </>
                 ) : (
                   <>
-                    We couldn&apos;t confirm automatic delivery of your details. Please reach us
-                    directly so we can lock in your slot.
+                    Your booking is saved on this device and we are still trying to deliver it to{" "}
+                    <strong className="text-amber-400">{inbox}</strong>. You can also send it
+                    yourself in one click below — it takes 5 seconds.
                   </>
                 )}
               </p>
@@ -597,13 +655,13 @@ Status: ${
             <div className="bg-slate-950 p-5 rounded-2xl border border-amber-500/30 font-mono text-xs text-slate-300 text-left space-y-2.5 max-w-lg mx-auto">
               <div className="flex justify-between border-b border-slate-800 pb-2">
                 <span className="text-slate-400">Booking Status:</span>
-                {dispatchStatus === "sent" ? (
+                {delivered ? (
                   <span className="text-emerald-400 font-bold flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Sent to {COMPANY_INFO.email}
+                    <CheckCircle2 className="w-3.5 h-3.5" /> E-mailed to {inbox}
                   </span>
                 ) : (
                   <span className="text-amber-400 font-bold flex items-center gap-1">
-                    <AlertTriangle className="w-3.5 h-3.5" /> Call us to confirm
+                    <AlertTriangle className="w-3.5 h-3.5" /> Saved — send below
                   </span>
                 )}
               </div>
@@ -642,26 +700,96 @@ Status: ${
               within 24 hours to confirm your audit slot.
             </p>
 
-            {dispatchStatus !== "sent" && (
-              <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                <a
-                  href={`tel:${COMPANY_INFO.directPhone.replace(/\s/g, "")}`}
-                  className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition-all border border-slate-700"
+            {!delivered && (
+              <div className="max-w-lg mx-auto rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 text-left space-y-3">
+                <p className="text-xs text-amber-200 leading-relaxed">{diagnosis()}</p>
+
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <a
+                    href={buildMailtoHref()}
+                    data-testid="booking-mailto"
+                    className="flex-1 inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-amber-500 text-slate-950 font-black text-xs hover:bg-amber-400 transition-all"
+                  >
+                    <Mail className="w-4 h-4" />
+                    <span>Send this booking by e-mail</span>
+                  </a>
+                  <button
+                    type="button"
+                    onClick={handleRetryDelivery}
+                    disabled={isRetrying}
+                    className="flex-1 inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition-all border border-slate-700 disabled:opacity-60"
+                  >
+                    {isRetrying ? (
+                      <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
+                    ) : (
+                      <RefreshCw className="w-4 h-4 text-amber-400" />
+                    )}
+                    <span>{isRetrying ? "Re-sending…" : "Retry automatic send"}</span>
+                  </button>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <a
+                    href={`tel:${COMPANY_INFO.directPhone.replace(/\s/g, "")}`}
+                    className="flex-1 inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition-all border border-slate-700"
+                  >
+                    <Phone className="w-4 h-4 text-amber-400" />
+                    <span>Call {COMPANY_INFO.phoneDisplay}</span>
+                  </a>
+                  <a
+                    href={whatsappHref}
+                    data-testid="booking-whatsapp"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all"
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    <span>WhatsApp Us</span>
+                  </a>
+                </div>
+
+                {delivery?.state === DELIVERY.ACTIVATION && (
+                  <a
+                    href="https://mail.google.com/mail/u/0/#search/formsubmit"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-[11px] text-amber-300 hover:text-amber-200 underline"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    <span>Open the inbox to approve the mail relay (one-time, 30 seconds)</span>
+                  </a>
+                )}
+              </div>
+            )}
+
+            {/* Honest per-relay diagnostics, folded away by default */}
+            {delivery?.attempts?.length > 0 && (
+              <div className="max-w-lg mx-auto text-left">
+                <button
+                  type="button"
+                  onClick={() => setShowDetails((v) => !v)}
+                  className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 hover:text-amber-300 transition-colors"
                 >
-                  <Phone className="w-4 h-4 text-amber-400" />
-                  <span>Call {COMPANY_INFO.phoneDisplay}</span>
-                </a>
-                <a
-                  href={`https://wa.me/917200745180?text=${encodeURIComponent(
-                    `Hi Grid Master, I just submitted a solar booking (Ref ${bookingRef}) for ${customerName}. Please confirm my slot: ${date} at ${timeSlot}.`
-                  )}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all"
-                >
-                  <MessageCircle className="w-4 h-4" />
-                  <span>WhatsApp Us</span>
-                </a>
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showDetails ? "rotate-180" : ""}`} />
+                  <span>{showDetails ? "Hide delivery details" : "Show delivery details"}</span>
+                </button>
+                {showDetails && (
+                  <ul className="mt-2 space-y-1.5 font-mono text-[10px] text-slate-400">
+                    {delivery.attempts.map((attempt, index) => (
+                      <li key={`${attempt.channel}-${index}`} className="flex gap-2">
+                        <span className={attempt.ok ? "text-emerald-400" : "text-amber-400"}>
+                          {attempt.ok ? "✓" : "✕"}
+                        </span>
+                        <span className="text-slate-300">
+                          {attempt.channel === "server" ? "company relay" : "formsubmit"}
+                          {attempt.transport ? ` (${attempt.transport})` : ""}
+                          {attempt.status ? ` → HTTP ${attempt.status}` : ""}:
+                        </span>
+                        <span className="flex-1">{attempt.message}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             )}
 

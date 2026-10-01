@@ -14,6 +14,7 @@ import VisitingCard from './components/VisitingCard';
 import Footer from './components/Footer';
 import BookingModal from './components/BookingModal';
 import WhatsAppButton from './components/WhatsAppButton';
+import { drainQueue } from './lib/bookingMail';
 
 export default function App() {
   const [theme, setTheme] = useState(() =>
@@ -24,6 +25,26 @@ export default function App() {
   const [isVisitingCardModalOpen, setIsVisitingCardModalOpen] = useState(false);
   const [selectedEquipment, setSelectedEquipment] = useState([]);
   const { pathname } = useLocation();
+
+  // A booking that could not be e-mailed at submit time is stored on the
+  // device — re-send it on load and whenever the connection comes back.
+  useEffect(() => {
+    let cancelled = false;
+    const flush = () => {
+      drainQueue().catch(() => {});
+    };
+    const flushSoon = () => {
+      if (!cancelled) flush();
+    };
+
+    const timer = setTimeout(flushSoon, 2500);
+    window.addEventListener('online', flushSoon);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      window.removeEventListener('online', flushSoon);
+    };
+  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
